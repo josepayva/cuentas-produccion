@@ -8,7 +8,7 @@ App para llevar las cobranzas, gastos y rodajes de los trabajos de producción (
 
 ## Archivos
 - `index.html` — la app.
-- `plataforma.js` — inicio de sesión con código al correo, conexión con Supabase y descargas.
+- `plataforma.js` — inicio de sesión con correo y contraseña, conexión con Supabase y descargas.
 - `sw.js`, `manifest.webmanifest`, `icons/` — app instalable.
 - `vendor/` — supabase-js 2 y jsPDF 2.5.1.
 - `.github/workflows/mantener-activo.yml` — evita la pausa de Supabase por inactividad.

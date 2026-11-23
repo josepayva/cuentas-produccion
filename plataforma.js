@@ -1,5 +1,5 @@
 /* Plataforma de "Cuentas de producción" fuera de Claude:
-   - inicio de sesión con código al correo (Supabase Auth)
+   - inicio de sesión con correo y contraseña (Supabase Auth)
    - base de datos en Supabase con la misma forma que usa la app (colecciones y documentos)
    - descargas (PDF) desde el navegador
    La app (index.html) pide estas piezas con window.claude.use(nombre), igual que antes. */
@@ -29,63 +29,48 @@
       document.body.appendChild(el);
       let correo = '';
       try { correo = localStorage.getItem('cp-correo') || ''; } catch (e) {}
-      const paso1 = msg => {
-        el.innerHTML = `<form class="lgc" id="lg1" novalidate>${LOGO}<h1 id="lgt">Cuentas</h1>
-          <p>Escribe tu correo y te enviamos un código para entrar.</p>
+      const pinta = (modo, msg) => {
+        const nueva = modo === 'crear';
+        el.innerHTML = `<form class="lgc" id="lgf" novalidate>${LOGO}<h1 id="lgt">${nueva ? 'Crea tu cuenta' : 'Cuentas'}</h1>
+          <p>${nueva ? 'Solo la primera vez. Usa una contraseña de al menos 8 caracteres; el iPhone y la Mac te ofrecerán guardarla.' : 'Entra con tu correo y tu contraseña.'}</p>
           <label for="lge">Correo</label>
-          <input id="lge" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required value="${esc(correo)}">
-          <button class="btn pri" type="submit">Enviarme el código</button>
-          <p class="lgerr" role="alert">${esc(msg || '')}</p></form>`;
-        const f = el.querySelector('#lg1'), i = el.querySelector('#lge'), b = f.querySelector('button'), er = f.querySelector('.lgerr');
-        setTimeout(() => i.focus(), 50);
+          <input id="lge" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" required value="${esc(correo)}">
+          <label for="lgp">Contraseña</label>
+          <input id="lgp" name="password" type="password" autocomplete="${nueva ? 'new-password' : 'current-password'}" minlength="8" required>
+          ${nueva ? `<label for="lgp2">Repite la contraseña</label><input id="lgp2" type="password" autocomplete="new-password" minlength="8" required>` : ''}
+          <button class="btn pri" type="submit">${nueva ? 'Crear cuenta y entrar' : 'Entrar'}</button>
+          <p class="lgerr" role="alert">${esc(msg || '')}</p>
+          <div class="lgacts lgc1"><button type="button" class="lnk" id="lgm">${nueva ? 'Ya tengo cuenta: entrar' : 'Primera vez: crear mi cuenta'}</button></div></form>`;
+        const f = el.querySelector('#lgf'), ie = el.querySelector('#lge'), ip = el.querySelector('#lgp'), b = f.querySelector('button[type=submit]'), er = f.querySelector('.lgerr');
+        setTimeout(() => (ie.value ? ip : ie).focus(), 50);
+        el.querySelector('#lgm').addEventListener('click', () => { correo = ie.value.trim(); pinta(nueva ? 'entrar' : 'crear'); });
         f.addEventListener('submit', async e => {
           e.preventDefault();
-          const v = i.value.trim().toLowerCase();
+          const v = ie.value.trim().toLowerCase(), pw = ip.value;
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { er.textContent = 'Revisa el correo: parece incompleto.'; return; }
-          b.disabled = true; b.textContent = 'Enviando…'; er.textContent = '';
-          const { error } = await sb.auth.signInWithOtp({ email: v, options: { shouldCreateUser: true } });
-          if (error) {
-            b.disabled = false; b.textContent = 'Enviarme el código';
-            er.textContent = /rate|seconds|limit/i.test(error.message) ? 'Ya se envió un código hace poco. Espera un minuto y vuelve a intentarlo, o usa el último código que te llegó.' : /signups?.*(not allowed|disabled)/i.test(error.message) ? 'Este correo no tiene acceso a estas cuentas.' : 'No se pudo enviar el código. Revisa tu conexión e inténtalo otra vez.';
-            if (!/rate|seconds|limit/i.test(error.message)) return;
-          }
+          if (pw.length < 8) { er.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+          if (nueva && pw !== el.querySelector('#lgp2').value) { er.textContent = 'Las dos contraseñas no coinciden.'; return; }
+          const txt = b.textContent; b.disabled = true; b.textContent = nueva ? 'Creando…' : 'Entrando…'; er.textContent = '';
           correo = v; try { localStorage.setItem('cp-correo', v); } catch (e2) {}
-          paso2();
-        });
-      };
-      const paso2 = msg => {
-        el.innerHTML = `<form class="lgc" id="lg2" novalidate>${LOGO}<h1 id="lgt">Revisa tu correo</h1>
-          <p>Te enviamos un código de 6 dígitos a <b>${esc(correo)}</b>. Si no lo ves, busca en Spam o Promociones.</p>
-          <label for="lgc">Código</label>
-          <input id="lgc" class="lgcod" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]*" required>
-          <button class="btn pri" type="submit">Entrar</button>
-          <p class="lgerr" role="alert">${esc(msg || '')}</p>
-          <div class="lgacts"><button type="button" class="lnk" id="lgr">Reenviar código</button><button type="button" class="lnk" id="lgx">Usar otro correo</button></div></form>`;
-        const f = el.querySelector('#lg2'), i = el.querySelector('#lgc'), b = f.querySelector('button[type=submit]'), er = f.querySelector('.lgerr');
-        setTimeout(() => i.focus(), 50);
-        const verificar = async () => {
-          const tok = i.value.replace(/\D/g, '');
-          if (tok.length < 6) { er.textContent = 'El código tiene 6 dígitos.'; return; }
-          b.disabled = true; b.textContent = 'Entrando…'; er.textContent = '';
-          const { data, error } = await sb.auth.verifyOtp({ email: correo, token: tok, type: 'email' });
-          if (error || !data.session) {
-            b.disabled = false; b.textContent = 'Entrar';
-            er.textContent = /expired|invalid/i.test((error && error.message) || '') ? 'El código no es válido o ya venció. Pide uno nuevo con “Reenviar código”.' : 'No se pudo entrar. Revisa tu conexión e inténtalo otra vez.';
+          const r = nueva ? await sb.auth.signUp({ email: v, password: pw }) : await sb.auth.signInWithPassword({ email: v, password: pw });
+          const m = (r.error && r.error.message) || '';
+          if (r.error || !r.data.session) {
+            b.disabled = false; b.textContent = txt;
+            if (nueva && !r.error && !r.data.session) er.textContent = 'La cuenta se creó, pero Supabase pide confirmarla por correo. Desactiva “Confirm email” en Supabase (Authentication → Sign In / Providers → Email) y vuelve a entrar.';
+            else if (/invalid login|invalid credentials/i.test(m)) er.textContent = 'El correo o la contraseña no son correctos.';
+            else if (/not confirmed/i.test(m)) er.textContent = 'Tu correo aún no está confirmado. Desactiva “Confirm email” en Supabase y vuelve a intentarlo.';
+            else if (/already registered|already exists/i.test(m)) er.textContent = 'Ese correo ya tiene cuenta. Toca “Ya tengo cuenta: entrar”.';
+            else if (/signups? not allowed|disabled/i.test(m)) er.textContent = 'No se pueden crear cuentas nuevas en esta app.';
+            else if (/weak|pwned|leaked/i.test(m)) er.textContent = 'Esa contraseña es muy fácil de adivinar o apareció en filtraciones. Usa otra.';
+            else if (/rate|too many/i.test(m)) er.textContent = 'Demasiados intentos. Espera un minuto y vuelve a intentarlo.';
+            else er.textContent = 'No se pudo entrar. Revisa tu conexión e inténtalo otra vez.';
             return;
           }
           el.remove();
-          resolve(data.session);
-        };
-        f.addEventListener('submit', e => { e.preventDefault(); verificar(); });
-        i.addEventListener('input', () => { const t = i.value.replace(/\D/g, ''); if (t !== i.value) i.value = t; if (t.length === 6) verificar(); });
-        el.querySelector('#lgx').addEventListener('click', () => paso1());
-        el.querySelector('#lgr').addEventListener('click', async () => {
-          er.textContent = 'Enviando…';
-          const { error } = await sb.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
-          er.textContent = error ? (/rate|seconds|limit/i.test(error.message) ? 'Espera un minuto antes de pedir otro código.' : 'No se pudo reenviar. Revisa tu conexión.') : 'Listo, te enviamos un código nuevo.';
+          resolve(r.data.session);
         });
       };
-      paso1();
+      pinta(correo ? 'entrar' : 'crear');
     });
   }
 
