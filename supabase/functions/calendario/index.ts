@@ -19,7 +19,7 @@ const API = 'https://www.googleapis.com/calendar/v3';
 
 const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const secretas = (() => { try { return JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}'); } catch { return {}; } })();
-const CLAVE = secretas['default'] || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const CLAVE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || secretas['default'];
 const admin = createClient(URL_SB, CLAVE, { auth: { persistSession: false, autoRefreshToken: false } });
 
 const cors = (req: Request) => {
@@ -147,17 +147,28 @@ Deno.serve(async (req) => {
     if (b.accion === 'terminar') {
       const { id, secreto } = credenciales();
       if (!b.code || !b.estado) return fallo(req, 'error', 'Faltan datos de Google.', 400);
-      const { data: est } = await admin.from('oauth_estados').select('*').eq('estado', b.estado).maybeSingle();
+      const { data: est, error: eEst } = await admin.from('oauth_estados').select('*').eq('estado', b.estado).maybeSingle();
+      if (eEst) console.error('No se pudo leer el estado OAuth:', eEst.message);
       await admin.from('oauth_estados').delete().eq('estado', b.estado);
       await admin.from('oauth_estados').delete().lt('creado', new Date(Date.now() - 15 * 60_000).toISOString());
-      if (!est || Date.now() - new Date(est.creado).getTime() > 15 * 60_000) return fallo(req, 'expired', 'El enlace de conexión venció. Vuelve a tocar “Conectar Google Calendar”.');
+      if (!est || Date.now() - new Date(est.creado).getTime() > 15 * 60_000) { console.error('Estado OAuth no encontrado o vencido'); return fallo(req, 'expired', 'El enlace de conexión venció. Vuelve a tocar “Conectar Google Calendar”.'); }
       const r = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ code: b.code, client_id: id, client_secret: secreto, redirect_uri: REDIRECT, grant_type: 'authorization_code' }),
       });
       const d = await r.json();
-      if (!r.ok) return fallo(req, 'error', 'Google no aceptó la conexión. Inténtalo otra vez.');
+      if (!r.ok) {
+        console.error('Intercambio de código rechazado por Google:', d.error, d.error_description);
+        const motivo = d.error === 'invalid_client' || d.error === 'unauthorized_client'
+          ? 'Google no reconoce el ID o el secreto del cliente. Revisa GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en Supabase (copiados con el botón de copiar, sin espacios) y vuelve a conectar.'
+          : d.error === 'redirect_uri_mismatch'
+          ? 'La dirección de regreso no coincide. En Google Cloud, el cliente debe tener exactamente https://josepayva.github.io/cuentas-produccion/ como URI de redireccionamiento.'
+          : d.error === 'invalid_grant'
+          ? 'El permiso de Google ya se usó o venció. Vuelve a tocar “Conectar Google Calendar”.'
+          : 'Google no aceptó la conexión (' + (d.error || 'error') + '). Inténtalo otra vez.';
+        return fallo(req, 'error', motivo);
+      }
       const { data: previo } = await admin.from('google_tokens').select('refresh_token').eq('usuario', est.usuario).maybeSingle();
       const refresh = d.refresh_token || (previo && previo.refresh_token);
       if (!refresh) return fallo(req, 'error', 'Google no entregó un permiso permanente. Quita el acceso de “Cuentas” en tu cuenta de Google y vuelve a conectar.');
@@ -167,10 +178,11 @@ Deno.serve(async (req) => {
         const c = await fetch(API + '/users/me/calendarList/primary', { headers: { Authorization: 'Bearer ' + d.access_token } });
         if (c.ok) correo = (await c.json()).id || '';
       } catch { /* sin correo */ }
-      await admin.from('google_tokens').upsert({
+      const { error: eTok } = await admin.from('google_tokens').upsert({
         usuario: est.usuario, refresh_token: refresh, access_token: d.access_token,
         expira: new Date(Date.now() + (d.expires_in || 3600) * 1000).toISOString(), correo, actualizado: new Date().toISOString(),
       });
+      if (eTok) { console.error('No se pudo guardar el permiso de Google:', eTok.message); return fallo(req, 'error', 'Google aceptó, pero no se pudo guardar el permiso. Avísale a Claude.'); }
       return json(req, { ok: true, correo });
     }
 
@@ -186,7 +198,8 @@ Deno.serve(async (req) => {
     if (b.accion === 'iniciar') {
       const { id } = credenciales();
       const estado = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, '');
-      await admin.from('oauth_estados').insert({ estado, usuario: u.id });
+      const { error: eIns } = await admin.from('oauth_estados').insert({ estado, usuario: u.id });
+      if (eIns) { console.error('No se pudo guardar el estado OAuth:', eIns.message); throw Object.assign(new Error('No se pudo iniciar la conexión (base de datos).'), { code: 'error' }); }
       const p = new URLSearchParams({
         client_id: id, redirect_uri: REDIRECT, response_type: 'code', scope: SCOPES,
         access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state: estado,
