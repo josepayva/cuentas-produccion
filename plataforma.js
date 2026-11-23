@@ -285,11 +285,19 @@
       b.disabled = true;
       try {
         if (b.dataset.cal === 'con') await CP.cal.conectar();
-        else if (b.dataset.cal === 'des') { if (confirm('¿Desconectar Google Calendar? Los eventos que ya existen se quedan en tu calendario.')) await CP.cal.desconectar(); else b.disabled = false; }
+        else if (b.dataset.cal === 'des') {
+          if (b.dataset.seguro) await CP.cal.desconectar();
+          else { b.dataset.seguro = '1'; b.disabled = false; b.textContent = 'Toca otra vez para desconectar'; setTimeout(() => { if (b.isConnected) { delete b.dataset.seguro; b.textContent = 'Desconectar'; } }, 5000); }
+        }
         else { estadoCal = null; pintarCaja(el); }
       } catch (err) { b.disabled = false; aviso(err.message || 'No se pudo completar.'); }
     };
   }
+  // Al volver a la ventana (por ejemplo, después de conectar en el navegador), revisar otra vez
+  window.addEventListener('focus', () => {
+    const el = document.getElementById('gcalbox');
+    if (el && estadoCal && !estadoCal.conectado) { estadoCal = null; pintarCaja(el); }
+  });
   new MutationObserver(() => {
     const el = document.getElementById('gcalbox');
     if (el && !el.dataset.ok) pintarCaja(el);

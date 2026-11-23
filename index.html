@@ -1547,7 +1547,7 @@ const A={
  syncCal:id=>syncCal(id),
  moverCal:()=>{cerrar();moverTodos()},
  addCal:id=>{mutT(id,n=>{n.cal={entrega:true,notif:true,...(n.cal||{}),on:true}}).then(()=>syncCal(id))},
- ajustes:()=>fAjustes(),salir:()=>{if(confirm('¿Cerrar sesión en este equipo? Tus datos quedan guardados en la nube.'))CP.salir()},
+ ajustes:()=>fAjustes(),salir:(id,b)=>{if(b.dataset.seguro){CP.salir();return}b.dataset.seguro='1';b.textContent='Toca otra vez para cerrar sesión';setTimeout(()=>{if(b.isConnected){delete b.dataset.seguro;b.textContent='Cerrar sesión'}},5000)},
  tplDef:()=>{const m={t1:'tplAdelanto',t2:'tplCuota',t3:'tplCancel'};Object.entries(m).forEach(([i,k])=>{const ta=sh.querySelector('#'+i);if(ta)ta.value=TPL[k]})},
  copiarTabla:()=>copiar(tabla(),'Tabla copiada. Pégala en Excel, Numbers o Google Sheets.'),
  copiarGastos:()=>copiar(tablaGastos()+(S.gastosGen.length?'\n\nGASTOS DEL NEGOCIO\n'+tablaGastosGen():''),'Tabla de gastos copiada. Pégala en Excel, Numbers o Google Sheets.'),

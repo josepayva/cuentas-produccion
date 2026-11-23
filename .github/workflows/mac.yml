@@ -1,0 +1,63 @@
+# Fabrica la app de Mac (Cuentas.app dentro de un .dmg) y la publica en Releases.
+# Se ejecuta a mano (Actions → "App de Mac" → Run workflow) o al subir una etiqueta mac-v*.
+name: App de Mac
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['mac-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mac
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: mac/src-tauri
+
+      - name: Instalar Tauri
+        run: npm install
+
+      - name: Íconos desde el monograma
+        run: npx tauri icon app-icon.png
+
+      - name: Fabricar Cuentas.app (Apple Silicon e Intel)
+        run: npx tauri build --target universal-apple-darwin
+
+      - name: Preparar archivo
+        run: |
+          mkdir -p ../salida
+          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg ../salida/Cuentas.dmg
+          ditto -c -k --keepParent src-tauri/target/universal-apple-darwin/release/bundle/macos/Cuentas.app ../salida/Cuentas-app.zip
+
+      - name: Guardar como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cuentas-mac
+          path: salida/*
+
+      - name: Publicar en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('mac-build-{0}', github.run_number) }}
+          name: Cuentas para Mac ${{ github.ref_type == 'tag' && github.ref_name || format('(versión {0})', github.run_number) }}
+          body: |
+            Descarga **Cuentas.dmg**, ábrelo y arrastra Cuentas a Aplicaciones.
+            La primera vez: clic derecho sobre Cuentas → Abrir (o Ajustes del Sistema → Privacidad y seguridad → Abrir de todas formas).
+          files: salida/*
