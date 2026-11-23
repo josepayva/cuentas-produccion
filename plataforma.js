@@ -70,7 +70,7 @@
           resolve(r.data.session);
         });
       };
-      pinta(correo ? 'entrar' : 'crear');
+      pinta('entrar');
     });
   }
 
