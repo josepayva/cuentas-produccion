@@ -468,6 +468,10 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .lgacts .lnk{min-height:44px}
 .cuenta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:var(--soft);margin-bottom:14px;font-size:14px;color:var(--mute)}
 .cuenta b{color:var(--ink);font-weight:600;word-break:break-all}
+.cpaviso{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);z-index:10000;width:min(92vw,520px);display:flex;gap:10px;align-items:flex-start;padding:14px 14px 14px 16px;border-radius:14px;background:#30282E;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.4);font-size:15px;line-height:1.4}
+.cpaviso.ok{background:#223534}
+.cpaviso span{flex:1}
+.cpaviso button{background:none;border:0;color:#fff;font-size:22px;line-height:1;min-width:32px;min-height:32px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -1421,7 +1425,7 @@ function fCliente(c){
  }});
 }
 function fAjustes(){
- abrir(cab('Ajustes')+`${window.CP&&CP.cuenta?`<div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div>`:''}<form novalidate>
+ abrir(cab('Ajustes')+`${window.CP&&CP.cuenta?`<div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div><div id="gcalbox" class="cuenta"></div>`:''}<form novalidate>
   <label class="chk"><input type="checkbox" id="aoc"${ocultarInicio?' checked':''}> Ocultar los montos al abrir la app en este equipo</label>
   <p class="hint">Se muestran tocando el ojo junto a “Por cobrar”. Se vuelven a ocultar cuando sales de la app.</p>
   <label for="atm">Apariencia en este equipo</label><select id="atm"><option value="">Automática (según el sistema)</option><option value="light"${tema==='light'?' selected':''}>Clara</option><option value="dark"${tema==='dark'?' selected':''}>Oscura</option></select>

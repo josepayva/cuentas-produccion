@@ -221,12 +221,86 @@
     }
   };
 
+  /* ---------- Google Calendar (por la función "calendario" de Supabase) ---------- */
+  async function fnCal(body) {
+    const { data, error } = await sb.functions.invoke('calendario', { body });
+    if (error) {
+      let d = null;
+      try { d = await error.context.json(); } catch (e) {}
+      if (d && d.error) throw Object.assign(new Error(d.error.message), { code: d.error.code });
+      throw Object.assign(new Error('Sin conexión con el calendario.'), { code: 'network' });
+    }
+    if (data && data.error) throw Object.assign(new Error(data.error.message), { code: data.error.code });
+    return data || {};
+  }
+  const zona = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Lima'; } catch (e) { return 'America/Lima'; } })();
+  const calendario = {
+    callTool: async (_servidor, tool, input) => {
+      const d = await fnCal({ accion: 'llamar', tool, input: Object.assign({}, input, { zona }) });
+      return { payload: d.payload };
+    }
+  };
+  let estadoCal = null;
+  const leerEstadoCal = async () => { await sesionLista; try { estadoCal = await fnCal({ accion: 'estado' }); } catch (e) { estadoCal = { error: e.message || 'error' }; } return estadoCal; };
+  CP.cal = {
+    estado: leerEstadoCal,
+    conectar: async () => { const d = await fnCal({ accion: 'iniciar' }); location.href = d.url; },
+    desconectar: async () => { await fnCal({ accion: 'desconectar' }); location.reload(); }
+  };
+
+  function aviso(txt, ok) {
+    const el = document.createElement('div');
+    el.className = 'cpaviso' + (ok ? ' ok' : '');
+    el.setAttribute('role', 'status');
+    el.innerHTML = `<span>${esc(txt)}</span><button type="button" aria-label="Cerrar">×</button>`;
+    el.querySelector('button').addEventListener('click', () => el.remove());
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 12000);
+  }
+
+  // Vuelta desde Google después de dar permiso (?code=…&state=…)
+  (async () => {
+    const q = new URLSearchParams(location.search);
+    if (!q.has('state') || !(q.has('code') || q.has('error'))) return;
+    history.replaceState(null, '', location.pathname);
+    if (q.get('error')) { aviso(q.get('error') === 'access_denied' ? 'No se conectó Google Calendar: cancelaste el permiso.' : 'Google no completó la conexión. Inténtalo otra vez desde Ajustes.'); return; }
+    try {
+      const d = await fnCal({ accion: 'terminar', code: q.get('code'), estado: q.get('state') });
+      aviso('Google Calendar conectado' + (d.correo ? ' (' + d.correo + ')' : '') + '. Si estabas en la app del iPhone, ya puedes volver a ella.', true);
+    } catch (e) { aviso(e.message || 'No se pudo conectar Google Calendar.'); }
+  })();
+
+  // Cuadro de Google Calendar en Ajustes
+  async function pintarCaja(el) {
+    el.dataset.ok = '1';
+    el.innerHTML = '<span>Google Calendar: revisando…</span>';
+    const e = estadoCal && !estadoCal.error ? estadoCal : await leerEstadoCal();
+    if (!el.isConnected) return;
+    if (e.error) { el.innerHTML = `<span>Google Calendar: no se pudo revisar la conexión.</span><button type="button" class="btn sm" data-cal="re">Reintentar</button>`; }
+    else if (!e.configurado) { el.innerHTML = '<span>Google Calendar: falta terminar la configuración en Google Cloud y Supabase.</span>'; }
+    else if (e.conectado) { el.innerHTML = `<span>Google Calendar conectado${e.correo ? ' como <b>' + esc(e.correo) + '</b>' : ''}</span><button type="button" class="btn sm" data-cal="des">Desconectar</button>`; }
+    else { el.innerHTML = `<span>Google Calendar no está conectado. Los rodajes y entregas no se guardan en tu calendario.</span><button type="button" class="btn sm pri" data-cal="con">Conectar Google Calendar</button>`; }
+    el.onclick = async ev => {
+      const b = ev.target.closest('[data-cal]'); if (!b) return;
+      b.disabled = true;
+      try {
+        if (b.dataset.cal === 'con') await CP.cal.conectar();
+        else if (b.dataset.cal === 'des') { if (confirm('¿Desconectar Google Calendar? Los eventos que ya existen se quedan en tu calendario.')) await CP.cal.desconectar(); else b.disabled = false; }
+        else { estadoCal = null; pintarCaja(el); }
+      } catch (err) { b.disabled = false; aviso(err.message || 'No se pudo completar.'); }
+    };
+  }
+  new MutationObserver(() => {
+    const el = document.getElementById('gcalbox');
+    if (el && !el.dataset.ok) pintarCaja(el);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
   /* ---------- lo que pide la app ---------- */
   window.claude = {
     use: async nombre => {
       if (nombre === 'db') { const s = await sesionLista; return crearDB(s.user.id); }
       if (nombre === 'downloads') return descargas;
-      if (nombre === 'mcp') return window.CP_CALENDARIO ? window.CP_CALENDARIO() : null;
+      if (nombre === 'mcp') { const e = await leerEstadoCal(); return e && e.conectado ? calendario : null; }
       return null;
     }
   };
