@@ -470,6 +470,15 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .cuenta b{color:var(--ink);font-weight:600;word-break:break-all}
 .cpaviso{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);z-index:10000;width:min(92vw,520px);display:flex;gap:10px;align-items:flex-start;padding:14px 14px 14px 16px;border-radius:14px;background:#30282E;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.4);font-size:15px;line-height:1.4}
 .cpaviso.ok{background:#223534}
+.cpaviso .cpav-b{font-size:14px;font-weight:650;background:rgba(255,255,255,.14);border-radius:10px;padding:0 12px;min-height:34px}
+.rsp{display:flex;flex-direction:column;gap:8px;width:100%}
+.rsp b{color:var(--ink)}
+.rspb{display:flex;flex-wrap:wrap;gap:8px}
+.rspl{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;max-height:280px;overflow:auto;border-top:1px solid var(--line)}
+.rspl li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.rspl li span{display:flex;flex-direction:column;color:var(--ink);font-size:14px}
+.rspl small{color:var(--mute);font-size:12.5px}
+.rsph{margin:0;font-size:12.5px;color:var(--mute)}
 .cpaviso span{flex:1}
 .cpaviso button{background:none;border:0;color:#fff;font-size:22px;line-height:1;min-width:32px;min-height:32px;cursor:pointer}
 </style>
@@ -1425,7 +1434,7 @@ function fCliente(c){
  }});
 }
 function fAjustes(){
- abrir(cab('Ajustes')+`${window.CP&&CP.cuenta?`<div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div><div id="gcalbox" class="cuenta"></div>`:''}<form novalidate>
+ abrir(cab('Ajustes')+`${window.CP&&CP.cuenta?`<div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div><div id="gcalbox" class="cuenta"></div><div id="respbox" class="cuenta"></div>`:''}<form novalidate>
   <label class="chk"><input type="checkbox" id="aoc"${ocultarInicio?' checked':''}> Ocultar los montos al abrir la app en este equipo</label>
   <p class="hint">Se muestran tocando el ojo junto a “Por cobrar”. Se vuelven a ocultar cuando sales de la app.</p>
   <label for="atm">Apariencia en este equipo</label><select id="atm"><option value="">Automática (según el sistema)</option><option value="light"${tema==='light'?' selected':''}>Clara</option><option value="dark"${tema==='dark'?' selected':''}>Oscura</option></select>

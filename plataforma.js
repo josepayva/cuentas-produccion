@@ -303,6 +303,104 @@
     if (el && !el.dataset.ok) pintarCaja(el);
   }).observe(document.documentElement, { childList: true, subtree: true });
 
+  /* ---------- copias de seguridad ---------- */
+  const fFecha = iso => { try { return new Date(iso).toLocaleString('es-PE', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return iso; } };
+  const hace = iso => { const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : 'hace ' + d + ' días'; };
+  const MOTIVO = { diaria: 'automática', manual: 'hecha a mano', 'antes de restaurar': 'antes de restaurar' };
+
+  async function leerTodo() {
+    const filas = [];
+    for (let desde = 0; ; desde += 1000) {
+      const { data, error } = await sb.from('documentos').select('coleccion,id,datos').range(desde, desde + 999);
+      if (error) throw error;
+      filas.push(...data);
+      if (data.length < 1000) break;
+    }
+    return filas;
+  }
+
+  async function descargarCopia() {
+    const filas = await leerTodo();
+    const de = c => filas.filter(f => f.coleccion === c).map(f => Object.assign({}, f.datos, { id: f.id }));
+    const aj = (filas.find(f => f.coleccion === 'ajustes' && f.id === 'general') || {}).datos || {};
+    const hoyISO = new Date().toISOString().slice(0, 10);
+    const copia = {
+      app: 'cuentas-produccion', fecha: hoyISO, version: 2,
+      clientes: de('clientes'), artistas: de('artistas'), gastosGen: de('gastosGen'), trabajos: de('trabajos'), aj,
+      comprobantes: de('comprobantes')
+    };
+    const blob = new Blob([JSON.stringify(copia)], { type: 'application/json' });
+    await descargas.save({ filename: `Cuentas-copia-${hoyISO}.json`, data: blob });
+    await sb.from('documentos').upsert({ coleccion: 'ajustes', id: 'respaldo', datos: { ultDescarga: new Date().toISOString() } }, { onConflict: 'usuario,coleccion,id' });
+    return copia;
+  }
+  CP.respaldo = { descargar: descargarCopia };
+
+  async function pintarRespaldo(el, abierto) {
+    el.dataset.ok = '1';
+    el.innerHTML = '<span>Copias de seguridad: revisando…</span>';
+    const [{ data: lista, error }, { data: rd }] = await Promise.all([
+      sb.from('respaldos').select('id,creado,motivo,documentos').order('creado', { ascending: false }).limit(40),
+      sb.from('documentos').select('datos').eq('coleccion', 'ajustes').eq('id', 'respaldo').maybeSingle()
+    ]);
+    if (!el.isConnected) return;
+    if (error) { el.innerHTML = '<span>Copias de seguridad: no se pudo revisar. Revisa tu conexión.</span>'; return; }
+    const ult = lista[0], desc = rd && rd.datos && rd.datos.ultDescarga;
+    el.innerHTML = `<div class="rsp">
+      <span><b>Copias automáticas</b> · cada madrugada, se guardan 30 días (sin fotos de comprobantes).<br>${ult ? `Última: ${esc(fFecha(ult.creado))} · ${lista.length} ${lista.length === 1 ? 'copia guardada' : 'copias guardadas'}` : 'La primera copia se hará esta madrugada.'}</span>
+      <span>Descarga a tu equipo (con fotos): ${desc ? esc(hace(desc)) : 'todavía ninguna'}. Guárdala en iCloud Drive una vez al mes.</span>
+      <div class="rspb"><button type="button" class="btn sm pri" data-r="desc">Descargar copia completa</button><button type="button" class="btn sm" data-r="ahora">Hacer copia ahora</button><button type="button" class="btn sm" data-r="ver">${abierto ? 'Ocultar copias' : 'Ver y restaurar'}</button></div>
+      ${abierto ? `<ul class="rspl">${lista.map(r => `<li><span>${esc(fFecha(r.creado))}<small>${esc(MOTIVO[r.motivo] || r.motivo)} · ${r.documentos} registros</small></span><button type="button" class="btn sm" data-r="rest" data-id="${r.id}">Restaurar</button></li>`).join('') || '<li><span>Aún no hay copias.</span></li>'}</ul><p class="rsph">Restaurar deja tus cuentas como estaban ese día. Antes se guarda una copia de cómo están ahora, por si te arrepientes.</p>` : ''}
+    </div>`;
+    el.onclick = async ev => {
+      const b = ev.target.closest('[data-r]'); if (!b) return;
+      const r = b.dataset.r;
+      if (r === 'ver') { pintarRespaldo(el, !abierto); return; }
+      if (r === 'rest' && !b.dataset.seguro) {
+        b.dataset.seguro = '1'; b.textContent = 'Toca otra vez para restaurar';
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.seguro; b.textContent = 'Restaurar'; } }, 5000);
+        return;
+      }
+      b.disabled = true;
+      try {
+        if (r === 'desc') { await descargarCopia(); aviso('Copia descargada. Guárdala en iCloud Drive o en otra carpeta segura.', true); pintarRespaldo(el, abierto); }
+        else if (r === 'ahora') { const { error: e } = await sb.rpc('respaldar_ahora'); if (e) throw e; aviso('Copia guardada.', true); pintarRespaldo(el, abierto); }
+        else if (r === 'rest') {
+          const { data: n, error: e } = await sb.rpc('restaurar_respaldo', { p_id: Number(b.dataset.id) });
+          if (e) throw e;
+          aviso(`Listo: se restauraron ${n} registros. Recargando…`, true);
+          Object.keys(localStorage).filter(k => k.startsWith('cp-cache:')).forEach(k => localStorage.removeItem(k));
+          setTimeout(() => location.reload(), 1200);
+        }
+      } catch (err) { b.disabled = false; aviso('No se pudo completar. Revisa tu conexión e inténtalo otra vez.'); }
+    };
+  }
+  new MutationObserver(() => {
+    const el = document.getElementById('respbox');
+    if (el && !el.dataset.ok) pintarRespaldo(el, false);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  // Recordatorio mensual de descargar una copia
+  sesionLista.then(async () => {
+    try {
+      const k = 'cp-rec-copia';
+      if (localStorage.getItem(k) === new Date().toISOString().slice(0, 10)) return;
+      const { data } = await sb.from('documentos').select('datos').eq('coleccion', 'ajustes').eq('id', 'respaldo').maybeSingle();
+      const ult = data && data.datos && data.datos.ultDescarga;
+      if (ult && Date.now() - new Date(ult).getTime() < 30 * 86400000) return;
+      localStorage.setItem(k, new Date().toISOString().slice(0, 10));
+      setTimeout(() => {
+        const el = document.createElement('div');
+        el.className = 'cpaviso ok';
+        el.setAttribute('role', 'status');
+        el.innerHTML = `<span>${ult ? 'Hace más de un mes que no descargas una copia de tus cuentas.' : 'Descarga tu primera copia de seguridad y guárdala en iCloud Drive.'}</span><button type="button" class="cpav-b">Descargar</button><button type="button" aria-label="Cerrar">×</button>`;
+        el.querySelector('.cpav-b').addEventListener('click', async () => { el.remove(); try { await descargarCopia(); aviso('Copia descargada. Guárdala en iCloud Drive.', true); } catch (e) { aviso('No se pudo descargar la copia.'); } });
+        el.querySelector('[aria-label=Cerrar]').addEventListener('click', () => el.remove());
+        document.body.appendChild(el);
+      }, 2500);
+    } catch (e) {}
+  });
+
   /* ---------- lo que pide la app ---------- */
   window.claude = {
     use: async nombre => {
