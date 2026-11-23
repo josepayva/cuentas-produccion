@@ -1,0 +1,39 @@
+# Evita que Supabase (plan gratis) pause la base por inactividad
+# y que GitHub apague esta tarea programada por falta de actividad en el repositorio.
+name: Mantener activo
+
+on:
+  schedule:
+    - cron: '17 13 */2 * *'   # cada 2 días, 8:17 a. m. hora de Lima
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tocar la base de datos de Supabase
+        run: |
+          curl -fsS -X POST "https://xktubxqesglnyvwgeoll.supabase.co/rest/v1/rpc/ping" \
+            -H "apikey: sb_publishable_XEp-jcHM6xnIuqDo12doHA_28ZFUHY0" \
+            -H "Content-Type: application/json" -d '{}'
+          echo
+
+      - uses: actions/checkout@v4
+
+      - name: Mantener activo el repositorio (una vez al mes)
+        run: |
+          ultimo=$(git log -1 --format=%ct)
+          ahora=$(date +%s)
+          if [ $(( (ahora - ultimo) / 86400 )) -ge 30 ]; then
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > .ultima-actividad
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .ultima-actividad
+            git commit -m "Mantener activo el repositorio"
+            git push
+          else
+            echo "El repositorio tuvo actividad hace menos de 30 días."
+          fi
