@@ -453,6 +453,12 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .pchips .chip span{font-size:12px;font-weight:500;opacity:.85;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pchips .chip b{font-size:14.5px;font-weight:650}
 
+/* fecha del pago visible (nov 2026) */
+.pg .pfecha{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:4px 12px;align-self:stretch;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:8px 12px;min-height:auto;cursor:default}
+.pg .pfecha label{margin:0;font-size:13px;font-weight:600;color:var(--mute)}
+.pg .pfecha input{justify-self:end;min-height:40px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;font-weight:600;text-align:right;padding:0 4px;max-width:100%}
+.pg .pfecha span{grid-column:1 / -1;font-size:12.5px;color:var(--mute)}
+
 /* ===== inicio de sesión ===== */
 #login{position:fixed;inset:0;z-index:9999;background:var(--bg);display:grid;place-items:center;padding:24px;overflow:auto}
 .lgc{width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px;text-align:center;align-items:stretch}
@@ -1263,9 +1269,9 @@ function fPago(id,pid){
   <label class="pgr"><span>A cuenta</span><b id="pmt">${esc(metodo)}</b><select name="metodo" id="pt" aria-label="Método de pago">${opts(METODOS.map(x=>[x,x]),metodo)}</select><i class="pgi sq">${ic('card')}</i></label></div>
   ${atajos.length?`<div class="pchips">${atajos.map(([l,v])=>`<button type="button" class="chip" data-v="${v}"><span>${esc(l)}</span><b>${fmt(v,m)}</b></button>`).join('')}</div>`:''}
   <div class="pmonto" aria-live="polite"><span class="ptipo" id="ptp"></span><output id="pval"></output><small class="pres" id="pres"></small></div>
+  <div class="pfecha"><label for="pf">Fecha del pago</label><input type="date" id="pf" value="${esc(fecha)}" max="${esc(sumarDias(hoy(),365))}"><span id="pfb">${fLarga(fecha)}</span></div>
   <label class="vh" for="pn">Notas</label><input id="pn" class="pnota" name="nota" placeholder="Notas…" autocomplete="off" value="${esc(pe?pe.nota||'':nx?nx.concepto:'')}">
   <div class="kp">${K('÷','Dividir')}${K('7')}${K('8')}${K('9')}${K('del','Borrar')}${K('×','Multiplicar')}${K('4')}${K('5')}${K('6')}${K('fecha','Cambiar fecha')}${K('−','Restar')}${K('1')}${K('2')}${K('3')}${K('ok',pe?'Guardar cambios':'Guardar pago','ok')}${K('+','Sumar')}${K('C','Borrar todo')}${K('0')}${K('.','Punto decimal')}</div>
-  <button type="button" class="pfecha" id="pfb">${fLarga(fecha)}</button><input type="date" id="pf" class="vh" tabindex="-1" aria-label="Fecha del pago" value="${esc(fecha)}">
   ${!pe&&t.estadoProd!=='entregado'&&nx&&nx.tipo==='entrega'?`<label class="chk"><input type="checkbox" name="entregar"> También marcar el trabajo como entregado hoy</label>`:''}
   <p class="err" id="perr"></p>
   <button type="button" class="lnk pvolver" data-a="verT" data-id="${id}">Volver al trabajo</button></form>`,{mount:s=>{
@@ -1281,9 +1287,9 @@ function fPago(id,pid){
    else if(k==='fecha'){abreFecha();return}
    else if(k==='ok'){enviar();return}
    pinta()};
-  const abreFecha=()=>{try{if(pf.showPicker){pf.showPicker();return}}catch(e){}pf.classList.remove('vh');pf.focus()};
-  pf.addEventListener('change',()=>{if(pf.value){fecha=pf.value;s.querySelector('#pfb').textContent=fLarga(fecha)}});
-  s.querySelector('#pfb').addEventListener('click',abreFecha);
+  const abreFecha=()=>{pf.focus();try{if(pf.showPicker)pf.showPicker()}catch(e){}pf.scrollIntoView({block:'center',behavior:'smooth'})};
+  const alCambiarFecha=()=>{if(pf.value){fecha=pf.value;s.querySelector('#pfb').textContent=fLarga(fecha)}};
+  pf.addEventListener('change',alCambiarFecha);pf.addEventListener('input',alCambiarFecha);
   s.querySelector('#pt').addEventListener('change',e=>{metodo=e.target.value;s.querySelector('#pmt').textContent=metodo});
   s.querySelector('.kp').addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(b)tecla(b.dataset.k)});
   const ch=s.querySelector('.pchips');ch&&ch.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b){ex=String(r2(+b.dataset.v));fresco=true;pinta()}});
