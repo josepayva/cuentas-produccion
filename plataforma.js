@@ -75,8 +75,13 @@
   }
 
   const sesionLista = (async () => {
-    const { data } = await sb.auth.getSession();
-    const s = data.session || (await pantallaLogin());
+    const { data, error } = await sb.auth.getSession();
+    let s = data.session;
+    if (!s && error) {
+      // Sin conexión y con la sesión vencida: se sigue con la sesión guardada; se renueva sola al volver la señal
+      try { const g = JSON.parse(localStorage.getItem('cp-auth') || 'null'); if (g && g.user && g.user.id && g.refresh_token) s = g; } catch (e) {}
+    }
+    s = s || (await pantallaLogin());
     CP.cuenta = s.user;
     return s;
   })();
@@ -91,26 +96,87 @@
     location.reload();
   };
 
-  /* ---------- base de datos (misma forma que la base de Claude) ---------- */
+  /* ---------- base de datos (misma forma que la base de Claude) ----------
+     Sin conexión: lo que se registra se guarda en el equipo (cola) y se sube solo cuando vuelve la señal. */
+  const esDeRed = e => !navigator.onLine || /fetch|network|load failed|timed? ?out|conexi|abort|ECONN|offline/i.test(String((e && (e.message || e.details)) || e || ''));
+  const esDeSesion = e => /jwt|token.*expired|401|not authenticated/i.test(String((e && (e.message || e.code)) || ''));
+
   function crearDB(uid) {
     const COLS = ['clientes', 'artistas', 'trabajos', 'gastosGen', 'comprobantes', 'ajustes'];
     const maps = {};      // coleccion -> Map(id -> datos)
     const oyentes = {};   // coleccion -> [fn(fromCache)]
     let canal = null, ocultoDesde = 0;
     const kCache = c => 'cp-cache:' + uid + ':' + c;
+    const kCola = 'cp-cola:' + uid;
     const err = (e, code) => Object.assign(new Error((e && e.message) || code || 'error'), { code: code || 'network' });
     const guardarCache = c => { if (c === 'comprobantes') return; try { localStorage.setItem(kCache(c), JSON.stringify([...maps[c]])); } catch (e) {} };
     const avisar = (c, fromCache) => { (oyentes[c] || []).forEach(fn => { try { fn(!!fromCache); } catch (e) { console.error(e); } }); if (!fromCache) guardarCache(c); };
 
+    /* --- cola de cambios pendientes --- */
+    let cola = [];
+    try { cola = JSON.parse(localStorage.getItem(kCola) || '[]'); if (!Array.isArray(cola)) cola = []; } catch (e) { cola = []; }
+    const guardarCola = () => {
+      try { localStorage.setItem(kCola, JSON.stringify(cola)); }
+      catch (e) { throw Object.assign(new Error('Sin espacio en el equipo'), { code: 'quota_exceeded' }); }
+      pintarEstado();
+    };
+    const pendiente = (c, id) => cola.find(x => x.c === c && x.id === id);
+    function encolar(op, c, id, datos) {
+      cola = cola.filter(x => !(x.c === c && x.id === id));
+      cola.push({ op, c, id, datos: op === 'set' ? datos : undefined, t: Date.now() });
+      guardarCola();
+    }
+    // Aplica los cambios pendientes encima de lo que llega del servidor
+    function aplicarCola(c) {
+      if (!maps[c]) return;
+      for (const x of cola) if (x.c === c) { if (x.op === 'del') maps[c].delete(x.id); else maps[c].set(x.id, x.datos); }
+    }
+
+    let subiendo = null, avisoError = 0;
+    async function subir() {
+      if (subiendo || !cola.length || !navigator.onLine) return subiendo;
+      subiendo = (async () => {
+        pintarEstado(true);
+        let subidos = 0;
+        while (cola.length && navigator.onLine) {
+          const x = cola[0];
+          let r;
+          try {
+            r = x.op === 'set'
+              ? await sb.from('documentos').upsert({ coleccion: x.c, id: x.id, datos: x.datos }, { onConflict: 'usuario,coleccion,id' })
+              : await sb.from('documentos').delete().eq('coleccion', x.c).eq('id', x.id);
+          } catch (e) { r = { error: e }; }
+          if (r.error) {
+            if (esDeSesion(r.error)) { try { await sb.auth.refreshSession(); } catch (e) {} break; }
+            if (esDeRed(r.error)) break;
+            // error permanente: no bloquear la cola por un solo cambio
+            console.error('Cambio descartado', x, r.error);
+            if (!avisoError++) aviso('Un cambio hecho sin conexión no se pudo guardar en la nube. Revisa que tus datos estén bien.');
+          } else subidos++;
+          // quitar solo si sigue siendo el mismo cambio (pudo reemplazarse mientras subía)
+          if (cola[0] === x) cola.shift(); else cola = cola.filter(y => y !== x);
+          guardarCola();
+        }
+        if (subidos && !cola.length) {
+          aviso(subidos === 1 ? 'Se subió el cambio que hiciste sin conexión.' : `Se subieron los ${subidos} cambios que hiciste sin conexión.`, true);
+          if (window.CP_reintentarCal) setTimeout(() => { try { window.CP_reintentarCal(); } catch (e) {} }, 800);
+        }
+      })().finally(() => { subiendo = null; pintarEstado(); });
+      return subiendo;
+    }
+    setInterval(() => { if (cola.length) subir(); }, 30000);
+
+    /* --- carga y tiempo real --- */
     async function cargar(c) {
       const filas = [];
       for (let desde = 0; ; desde += 1000) {
         const { data, error } = await sb.from('documentos').select('id,datos').eq('coleccion', c).range(desde, desde + 999);
-        if (error) throw err(error);
+        if (error) throw err(error, esDeRed(error) ? 'network' : 'unavailable');
         filas.push(...data);
         if (data.length < 1000) break;
       }
       maps[c] = new Map(filas.map(f => [f.id, f.datos]));
+      aplicarCola(c);
       avisar(c, false);
     }
 
@@ -120,12 +186,13 @@
         .on('postgres_changes', { event: '*', schema: 'public', table: 'documentos' }, p => {
           const fila = p.eventType === 'DELETE' ? p.old : p.new;
           if (!fila || !fila.coleccion || !maps[fila.coleccion]) return;
+          if (pendiente(fila.coleccion, fila.id)) return; // gana lo que está por subir
           if (p.eventType === 'DELETE') maps[fila.coleccion].delete(fila.id);
           else maps[fila.coleccion].set(fila.id, fila.datos);
           avisar(fila.coleccion, false);
         })
         .subscribe(estado => {
-          if (estado === 'SUBSCRIBED') recargarTodo();
+          if (estado === 'SUBSCRIBED') subir().then(() => recargarTodo());
         });
     }
 
@@ -135,22 +202,30 @@
       recargando = Promise.all(Object.keys(oyentes).map(c => cargar(c).catch(() => {}))).finally(() => { recargando = null; });
       return recargando;
     }
+    const alVolver = () => { pintarEstado(); subir().then(() => recargarTodo()); };
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) { ocultoDesde = Date.now(); return; }
-      if (ocultoDesde && Date.now() - ocultoDesde > 20000) recargarTodo();
+      if (cola.length || (ocultoDesde && Date.now() - ocultoDesde > 20000)) alVolver();
     });
-    window.addEventListener('online', () => recargarTodo());
+    window.addEventListener('online', alVolver);
+    window.addEventListener('offline', () => pintarEstado());
 
     function escuchar(c, fn, onErr) {
       if (!COLS.includes(c)) throw err(null, 'invalid_argument');
       (oyentes[c] = oyentes[c] || []).push(fn);
       if (!maps[c]) {
+        let enCache = false;
         try {
           const g = JSON.parse(localStorage.getItem(kCache(c)) || 'null');
-          if (Array.isArray(g)) { maps[c] = new Map(g); setTimeout(() => fn(true), 0); }
+          if (Array.isArray(g)) { maps[c] = new Map(g); aplicarCola(c); enCache = true; setTimeout(() => fn(true), 0); }
         } catch (e) {}
-        cargar(c).catch(e => onErr && onErr(e));
+        cargar(c).catch(e => {
+          // Sin conexión pero con datos guardados: se trabaja con lo guardado y se reintenta al volver la señal
+          if (enCache && e.code === 'network') { (oyentes[c] || []).forEach(f => { try { f(false); } catch (x) {} }); pintarEstado(); return; }
+          if (!enCache && e.code === 'network') { maps[c] = maps[c] || new Map(); aplicarCola(c); }
+          onErr && onErr(e);
+        });
       } else setTimeout(() => fn(false), 0);
       asegurarCanal();
       return () => { oyentes[c] = (oyentes[c] || []).filter(x => x !== fn); };
@@ -158,29 +233,64 @@
 
     async function escribir(c, id, datos) {
       if (!COLS.includes(c)) throw err(null, 'invalid_argument');
-      if (maps[c]) maps[c].set(id, datos);
-      const { error } = await sb.from('documentos').upsert({ coleccion: c, id, datos }, { onConflict: 'usuario,coleccion,id' });
-      if (error) {
-        if (/quota|disk|space/i.test(error.message)) throw err(error, 'quota_exceeded');
-        if (error.code === '42501' || /permission|JWT|row-level/i.test(error.message)) throw err(error, 'invalid_argument');
-        throw err(error);
+      if (!maps[c]) maps[c] = new Map();
+      maps[c].set(id, datos);
+      guardarCache(c);
+      if (!navigator.onLine || cola.length) { encolar('set', c, id, datos); subir(); return; }
+      let r;
+      try { r = await sb.from('documentos').upsert({ coleccion: c, id, datos }, { onConflict: 'usuario,coleccion,id' }); } catch (e) { r = { error: e }; }
+      if (r.error) {
+        if (esDeRed(r.error) || esDeSesion(r.error)) { encolar('set', c, id, datos); if (esDeSesion(r.error)) sb.auth.refreshSession().then(() => subir()).catch(() => {}); return; }
+        if (/quota|disk|space/i.test(r.error.message)) throw err(r.error, 'quota_exceeded');
+        if (r.error.code === '42501' || /permission|row-level/i.test(r.error.message)) throw err(r.error, 'invalid_argument');
+        throw err(r.error);
       }
-      if (maps[c]) guardarCache(c);
     }
 
     async function borrarDoc(c, id) {
-      if (maps[c]) maps[c].delete(id);
-      const { error } = await sb.from('documentos').delete().eq('coleccion', c).eq('id', id);
-      if (error) throw err(error);
-      if (maps[c]) guardarCache(c);
+      if (maps[c]) { maps[c].delete(id); guardarCache(c); }
+      if (!navigator.onLine || cola.length) { encolar('del', c, id); subir(); return; }
+      let r;
+      try { r = await sb.from('documentos').delete().eq('coleccion', c).eq('id', id); } catch (e) { r = { error: e }; }
+      if (r.error) {
+        if (esDeRed(r.error) || esDeSesion(r.error)) { encolar('del', c, id); return; }
+        throw err(r.error);
+      }
     }
 
     async function leer(c, id) {
+      const p = pendiente(c, id);
+      if (p) return p.op === 'del' ? undefined : p.datos;
       if (maps[c] && maps[c].has(id)) return maps[c].get(id);
       const { data, error } = await sb.from('documentos').select('datos').eq('coleccion', c).eq('id', id).maybeSingle();
-      if (error) throw err(error);
+      if (error) { if (esDeRed(error)) return undefined; throw err(error); }
       return data ? data.datos : undefined;
     }
+
+    /* --- indicador "Sin conexión · N cambios por subir" --- */
+    let pill = null;
+    function pintarEstado(subiendoAhora) {
+      const n = cola.length, off = !navigator.onLine;
+      const sy = document.getElementById('sync');
+      if (sy && sy.textContent !== 'Conectando…') {
+        const r = window.CP_estadoRed();
+        sy.className = 'sync' + (r ? ' ' + r.cls : '');
+        sy.innerHTML = '<i></i>' + (r ? esc(r.txt) : 'Sincronizado');
+      }
+      if (!off && !n) { if (pill) { pill.remove(); pill = null; } return; }
+      if (!pill) { pill = document.createElement('div'); pill.className = 'cpcola'; pill.setAttribute('role', 'status'); pill.setAttribute('aria-live', 'polite'); document.body.appendChild(pill); }
+      const cambios = n ? `${n} ${n === 1 ? 'cambio por subir' : 'cambios por subir'}` : '';
+      pill.classList.toggle('off', off);
+      pill.innerHTML = `<i aria-hidden="true"></i><span>${off ? 'Sin conexión' + (cambios ? ' · ' + cambios : ' · mostrando lo último guardado') : (subiendoAhora || subiendo ? 'Subiendo ' + cambios.replace(' por subir', '') + '…' : cambios)}</span>`;
+    }
+    CP.cola = { pendientes: () => cola.length, subir };
+    window.CP_estadoRed = () => {
+      const n = cola.length;
+      if (!navigator.onLine) return { cls: 'off', txt: 'Sin conexión' + (n ? ` · ${n} por subir` : '') };
+      if (n) return { cls: 'pend', txt: `Subiendo ${n} ${n === 1 ? 'cambio' : 'cambios'}…` };
+      return null;
+    };
+    setTimeout(() => { pintarEstado(); subir(); }, 0);
 
     const refDoc = (c, id) => ({
       set: o => escribir(c, id, JSON.parse(JSON.stringify(o))),
@@ -406,7 +516,12 @@
     use: async nombre => {
       if (nombre === 'db') { const s = await sesionLista; return crearDB(s.user.id); }
       if (nombre === 'downloads') return descargas;
-      if (nombre === 'mcp') { const e = await leerEstadoCal(); return e && e.conectado ? calendario : null; }
+      if (nombre === 'mcp') {
+        const e = await leerEstadoCal(), k = 'cp-cal-con:' + (CP.cuenta && CP.cuenta.id);
+        if (e && !e.error) { try { localStorage.setItem(k, e.conectado ? '1' : '0'); } catch (x) {} return e.conectado ? calendario : null; }
+        let antes = null; try { antes = localStorage.getItem(k); } catch (x) {}
+        return antes === '1' ? calendario : null; // sin conexión: se recuerda que estaba conectado
+      }
       return null;
     }
   };

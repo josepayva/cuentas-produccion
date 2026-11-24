@@ -479,6 +479,12 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .rspl li span{display:flex;flex-direction:column;color:var(--ink);font-size:14px}
 .rspl small{color:var(--mute);font-size:12.5px}
 .rsph{margin:0;font-size:12.5px;color:var(--mute)}
+.cpcola{position:fixed;left:12px;bottom:calc(84px + var(--sb, 0px));z-index:26;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 190px);padding:9px 14px;border-radius:20px;background:#2F3A3F;color:#fff;font-size:13.5px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.3)}
+.cpcola i{width:8px;height:8px;border-radius:50%;background:#F3AF58;flex:none}
+.cpcola.off{background:#3A2E22}
+.cpcola span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(min-width:760px){.cpcola{left:24px;bottom:28px;max-width:420px}}
+.sync.off i,.sync.pend i{background:#F3AF58}.sync.off,.sync.pend{color:var(--ink)}
 .cpaviso span{flex:1}
 .cpaviso button{background:none;border:0;color:#fff;font-size:22px;line-height:1;min-width:32px;min-height:32px;cursor:pointer}
 </style>
@@ -641,6 +647,7 @@ function calMsg(e){switch(e&&e.code){
  case'server_not_connected':return'Para usar el calendario, conecta Google Calendar en Ajustes.';
  case'needs_reauth':return'Vuelve a conectar Google Calendar en Ajustes.';
  case'approval_required':case'not_in_manifest':case'consent_required':return'Falta darle permiso a la app para usar tu Google Calendar. Toca “Sincronizar calendario” y acepta el aviso.';
+ case'network':return'Sin conexión: el calendario se actualizará solo cuando vuelva la señal.';
  case'blocked_by_policy':return'Tu organización no permite usar Google Calendar desde aquí.';
  case'selection_required':return'Elige qué cuenta de Google Calendar usar en el aviso de Claude y vuelve a sincronizar.';
  default:return'No se pudo actualizar Google Calendar. Revisa tu conexión y toca “Sincronizar calendario”.'}}
@@ -660,6 +667,8 @@ const enCurso={};
 const fueraDeCal=()=>mcpNs?S.trabajos.filter(t=>t.cal&&(t.cal.ev||t.cal.evE)&&t.estadoProd!=='cancelado'&&(t.cal.cid||'')!==(S.aj.calId||'')):[];
 let moviendo=false;
 async function moverTodos(){if(moviendo)return;const l=fueraDeCal();if(!l.length){toast('Todos tus trabajos ya están en '+(S.aj.calNom||'tu calendario principal')+'.');return}moviendo=true;render();toast(`Moviendo ${l.length} ${l.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);for(const t of l){await syncCal(t.id);await espera(400)}moviendo=false;render();const q=fueraDeCal().length;toast(q?'Algunos trabajos no se pudieron mover. Revisa tu conexión y vuelve a intentarlo.':'Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')}
+let calAvisoRed=0;
+window.CP_reintentarCal=()=>{calAvisoRed=0;if(!mcpNs)return;S.trabajos.filter(t=>t.cal&&t.cal.err&&(t.cal.on||t.cal.ev||t.cal.evE)).forEach(t=>syncCal(t.id))};
 async function syncCal(id){
  const t0=S.trabajos.find(x=>x.id===id);if(!t0||!mcpNs||enCurso[id])return;
  if(!(t0.cal&&(t0.cal.on||t0.cal.ev||t0.cal.evE||Object.keys(t0.cal.evx||{}).length)))return;
@@ -688,7 +697,7 @@ async function syncCal(id){
    if(!hecho){const r=await call('create_event',{...ev,notificationLevel:'NONE'});cal.evE=evId(r)}
   }else if(cal.evE){await call('delete_event',{eventId:cal.evE,notificationLevel:'NONE'}).catch(e=>{if(!(e&&e.code==='tool_error'))throw e});cal.evE=''}
   cal.err='';cal.ok=Date.now();
- }catch(e){cal.err=calMsg(e);toast(cal.err)}
+ }catch(e){if(!navigator.onLine)e={code:'network'};cal.err=calMsg(e);if(!(e&&e.code==='network'&&calAvisoRed))toast(cal.err);if(e&&e.code==='network')calAvisoRed=1}
  delete enCurso[id];
  await mutT(id,n=>{n.cal=cal});
 }
@@ -1600,7 +1609,7 @@ function pintar(){
  const ae=document.activeElement,aid=ae&&ae.id,sel=ae&&ae.selectionStart;
  const v=vista();
  document.querySelectorAll('[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
- const sy=$('#sync');sy.className='sync'+(S.modo==='local'?' local':'');sy.innerHTML='<i></i>'+(S.modo==='nube'?'Sincronizado':S.modo==='local'?'Solo este equipo':'Conectando…');
+ const sy=$('#sync'),red=S.modo==='nube'&&window.CP_estadoRed?window.CP_estadoRed():null;sy.className='sync'+(S.modo==='local'?' local':'')+(red?' '+red.cls:'');sy.innerHTML='<i></i>'+(red?red.txt:S.modo==='nube'?'Sincronizado':S.modo==='local'?'Solo este equipo':'Conectando…');
  const av=$('#aviso');av.hidden=!S.aviso;av.textContent=S.aviso;
  $('#view').innerHTML=VISTAS[v]();
  if(aid==='qt'||aid==='qc'||aid==='qa'){const el=document.getElementById(aid);if(el){el.focus();try{el.setSelectionRange(sel,sel)}catch(e){}}}
