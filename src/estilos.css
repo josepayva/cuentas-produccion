@@ -497,3 +497,10 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .atk{display:grid;gap:6px}.atk input{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .atp{margin:4px 0 0;padding-left:20px;display:grid;gap:10px;font-size:14px}.atp ul{margin:6px 0;padding-left:18px;display:grid;gap:4px}
 .atp code{font-size:12px;background:var(--line);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}
+
+/* cotizaciones */
+.qrow{display:grid;grid-template-columns:1fr 54px 96px 36px;gap:6px;align-items:center;margin-bottom:6px}
+.qrow input{min-width:0}.qrow [data-f=n],.qrow [data-f=p]{text-align:right}
+.qrow .x.sm{width:36px;height:36px;font-size:18px}
+.qtot{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 4px;padding-top:10px;border-top:1px solid var(--line)}
+.qtot b{font-size:24px;font-variant-numeric:tabular-nums}

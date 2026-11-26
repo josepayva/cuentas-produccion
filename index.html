@@ -516,6 +516,13 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .atk{display:grid;gap:6px}.atk input{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .atp{margin:4px 0 0;padding-left:20px;display:grid;gap:10px;font-size:14px}.atp ul{margin:6px 0;padding-left:18px;display:grid;gap:4px}
 .atp code{font-size:12px;background:var(--line);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}
+
+/* cotizaciones */
+.qrow{display:grid;grid-template-columns:1fr 54px 96px 36px;gap:6px;align-items:center;margin-bottom:6px}
+.qrow input{min-width:0}.qrow [data-f=n],.qrow [data-f=p]{text-align:right}
+.qrow .x.sm{width:36px;height:36px;font-size:18px}
+.qtot{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 4px;padding-top:10px;border-top:1px solid var(--line)}
+.qtot b{font-size:24px;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -571,7 +578,8 @@ const TPL={
  tplCuota:'Hola {cliente}, ¿cómo estás? Te recuerdo el pago de {cuota} por {monto} del proyecto "{trabajo}". Quedo atento. ¡Gracias!',
  tplCancel:'Hola {cliente}, ¿cómo estás? Te escribo por "{trabajo}": quedaría pendiente la cancelación de {monto}. Quedo atento a tu confirmación. ¡Gracias!'
 };
-const DEF_AJ={negocio:'',moneda:'PEN',gracia:3,equipo:'',invFrec:'',tipoDef:'Videoclip',colRodaje:'4',colEntrega:'4',calId:'',calNom:'',...TPL};
+const TERM_DEF='• Precios en la moneda indicada; no incluyen IGV salvo que se diga lo contrario.\n• Para separar la fecha se pide el adelanto indicado en la forma de pago.\n• El saldo se paga a la entrega del material final.\n• Incluye hasta 2 rondas de cambios en edición; cambios adicionales se cotizan aparte.\n• Cambios de fecha con al menos 72 horas de aviso; el adelanto no es reembolsable.';
+const DEF_AJ={cotValidez:15,cotTerminos:TERM_DEF,cotContacto:'',negocio:'',moneda:'PEN',gracia:3,equipo:'',invFrec:'',tipoDef:'Videoclip',colRodaje:'4',colEntrega:'4',calId:'',calNom:'',...TPL};
 const GCOL=[['1','Lavanda','#7986cb'],['2','Salvia','#33b679'],['3','Uva','#8e24aa'],['4','Flamenco','#e67c73'],['5','Plátano','#f6bf26'],['6','Mandarina','#f4511e'],['7','Pavo real','#039be5'],['8','Grafito','#616161'],['9','Arándano','#3f51b5'],['10','Albahaca','#0b8043'],['11','Tomate','#d50000']];
 const colHex=id=>{const c=GCOL.find(x=>x[0]===String(id));return c?c[2]:''};
 const colNom=id=>{const c=GCOL.find(x=>x[0]===String(id));return c?c[1]:(S.aj.calId?'Color del calendario '+(S.aj.calNom||''):'Predeterminado')};
@@ -1086,7 +1094,7 @@ function dTrabajo(id){
  ${tagsHtml(t)}
  ${calBloque(t)}
  <div class="acts">
-  ${e==='cotizado'?`<button class="btn pri" data-a="aprobar" data-id="${id}">${ic('check')}Cotización aprobada</button>`:''}
+  ${e==='cotizado'?`<button class="btn pri" data-a="aprobar" data-id="${id}">${ic('check')}Cotización aprobada</button><button class="btn" data-a="cotPdf" data-id="${id}">${ic('list')}${t.cot&&t.cot.num?'Cotización PDF · '+esc(t.cot.num):'Armar cotización PDF'}</button>${t.cot&&t.cot.num?`<button class="btn" data-a="fCot" data-id="${id}">${ic('edit')}Editar partidas</button>`:''}`:t.cot&&t.cot.num?`<button class="btn" data-a="cotPdf" data-id="${id}">${ic('list')}Cotización ${esc(t.cot.num)}</button>`:''}
   ${sal>0&&cuenta(t)?`<button class="btn pri" data-a="pago" data-id="${id}">${ic('cash')}Registrar pago</button>`:''}
   ${tel&&sal>0&&cuenta(t)?`<a class="btn" href="${esc(waT(t))}" target="_blank" rel="noopener">${ic('wa')}${nx&&nx.tipo==='adelanto'?'Pedir adelanto por WhatsApp':nx&&nx.tipo==='entrega'?'Cobrar por WhatsApp':'Recordar por WhatsApp'}</a>`:''}
   ${['produccion','cotizado'].includes(t.estadoProd)?`<button class="btn" data-a="entregar" data-id="${id}">${ic('check')}Marcar entregado hoy</button>`:''}
@@ -1423,7 +1431,7 @@ function fGastoGen(g0){
 /* ---------- PDF ---------- */
 let pdfLib=null;
 function cargarPdf(){if(pdfLib)return pdfLib;pdfLib=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='vendor/jspdf.umd.min.js';sc.onload=()=>window.jspdf?res(window.jspdf.jsPDF):rej(new Error('pdf'));sc.onerror=()=>{pdfLib=null;rej(new Error('pdf'))};document.head.appendChild(sc)});return pdfLib}
-const pdfTxt=x=>String(x??'').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/[–—]/g,'-').replace(/…/g,'...').replace(/[^\x20-\xFF\n]/g,'');
+const pdfTxt=x=>String(x??'').replace(/[•●▪]/g,'·').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/[–—]/g,'-').replace(/…/g,'...').replace(/[^\x20-\xFF\n]/g,'');
 async function hacerPdf(tipo,t,p){
  const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
  if(!dl){toast('Aquí no se pueden descargar archivos. Te dejo el texto para copiar.');copiar(tipo==='recibo'?textoRecibo(t,p):textoT(t));return}
@@ -1460,6 +1468,90 @@ async function hacerPdf(tipo,t,p){
  const blob=d.output('blob');
  const nom=(tipo==='recibo'?'constancia-pago-':'estado-de-cuenta-')+String(t.titulo).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'').slice(0,40).toLowerCase()+(tipo==='recibo'?'-'+(p.fecha||''):'')+'.pdf';
  try{await dl.save({filename:nom,data:blob});toast('PDF listo.')}catch(e){if(e&&e.code==='declined')return;toast(e&&e.code==='rate_limited'?'Ya hay una descarga esperando tu confirmación.':'No se pudo guardar el PDF aquí.')}
+}
+/* ---------- cotizaciones ---------- */
+const PARTIDAS=['Dirección y realización','Rodaje (día)','Cámara y lentes','Equipo de luces','Drone','Edición y montaje','Colorización','Diseño de sonido','Movilidad','Locación','Maquillaje','Arte y vestuario'];
+const totCot=c=>r2(((c&&c.items)||[]).reduce((a,x)=>a+r2(num(x.cant||1)*num(x.precio)),0));
+function sigNumCot(anio){let mx=0;for(const t of S.trabajos){const m=/^COT-(\d{4})-(\d+)$/.exec((t.cot&&t.cot.num)||'');if(m&&m[1]===String(anio))mx=Math.max(mx,+m[2])}return `COT-${anio}-${String(mx+1).padStart(3,'0')}`}
+function fCot(id){
+ const t=S.trabajos.find(x=>x.id===id);if(!t)return;const m=t.moneda||'PEN';
+ const c0=t.cot||{},emit=c0.emitida||hoy();
+ let items=(c0.items&&c0.items.length?c0.items:(num(t.total)>0?[{concepto:(t.tipo&&!nrm(t.titulo).includes(nrm(t.tipo))?t.tipo+' – ':'')+(t.titulo||'Producción'),cant:1,precio:num(t.total)}]:[{concepto:'',cant:1,precio:''}])).map(x=>({id:x.id||uid(),concepto:x.concepto||'',cant:x.cant??1,precio:x.precio??''}));
+ abrir(cab(c0.num?'Cotización '+esc(c0.num):'Cotización',esc(t.titulo))+`<form novalidate>
+  <label>Partidas</label><div id="qitems"></div>
+  <div class="acts" style="margin:6px 0"><button type="button" class="btn sm" id="qadd">${ic('plus')}Agregar partida</button></div>
+  <div class="chips presets" id="qpre">${PARTIDAS.map(x=>`<button type="button" class="chip" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+  <div class="qtot"><span>Total</span><b id="qtotal">${fmtR(0,m)}</b></div>
+  <label class="chk"><input type="checkbox" name="usarTotal" checked> Usar este total como monto del trabajo</label>
+  <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c0.valida||sumarDias(emit,num(S.aj.cotValidez)||15))}"></div></div>
+  <label for="qt">Términos y condiciones</label><textarea id="qt" name="terminos" rows="6">${esc(c0.terminos??S.aj.cotTerminos??TERM_DEF)}</textarea>
+  <p class="hint">La forma de pago (adelanto y cuotas) se toma del trabajo. Los términos por defecto se cambian en Ajustes.</p>
+  <p class="err" id="qerr" role="alert"></p>
+  <div class="acts"><button class="btn pri" type="submit" name="pdf" value="1">Guardar y descargar PDF</button><button class="btn" type="submit">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${t.id}">Cancelar</button></div></form>`,{mount:s=>{
+  const box=s.querySelector('#qitems'),tot=s.querySelector('#qtotal'),F=s.querySelector('form'),err=s.querySelector('#qerr');
+  const leer=()=>{box.querySelectorAll('.qrow').forEach((r,i)=>{items[i].concepto=r.querySelector('[data-f=c]').value;items[i].cant=r.querySelector('[data-f=n]').value;items[i].precio=r.querySelector('[data-f=p]').value})};
+  const suma=()=>{tot.textContent=fmtR(totCot({items}),m)};
+  const pinta=()=>{box.innerHTML=items.map((x,i)=>`<div class="qrow"><input data-f="c" aria-label="Concepto ${i+1}" placeholder="Concepto" value="${esc(x.concepto)}"><input data-f="n" aria-label="Cantidad" inputmode="decimal" value="${esc(x.cant)}"><input data-f="p" aria-label="Precio unitario" inputmode="decimal" placeholder="0.00" value="${esc(x.precio)}"><button type="button" class="x sm" data-r="${i}" aria-label="Quitar partida">×</button></div>`).join('');suma()};
+  pinta();
+  box.addEventListener('input',()=>{leer();suma()});
+  box.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b){leer();items.splice(+b.dataset.r,1);if(!items.length)items.push({id:uid(),concepto:'',cant:1,precio:''});pinta()}});
+  s.querySelector('#qadd').addEventListener('click',()=>{leer();items.push({id:uid(),concepto:'',cant:1,precio:''});pinta();box.querySelector('.qrow:last-child [data-f=c]').focus()});
+  s.querySelector('#qpre').addEventListener('click',e=>{const b=e.target.closest('[data-q]');if(!b)return;leer();const vacia=items.find(x=>!x.concepto&&!num(x.precio));if(vacia)vacia.concepto=b.dataset.q;else items.push({id:uid(),concepto:b.dataset.q,cant:1,precio:''});pinta();const ps=[...box.querySelectorAll('[data-f=p]')].find((x,i)=>items[i].concepto===b.dataset.q&&!x.value);ps&&ps.focus()});
+  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(S.aj.cotValidez)||15)});
+  F.addEventListener('submit',async e=>{e.preventDefault();leer();
+   const L=items.filter(x=>x.concepto.trim()||num(x.precio)>0).map(x=>({id:x.id,concepto:x.concepto.trim()||'Partida',cant:num(x.cant)||1,precio:r2(num(x.precio))}));
+   if(!L.length||totCot({items:L})<=0){err.textContent='Agrega al menos una partida con precio.';return}
+   const D=new FormData(F),emi=D.get('emitida')||hoy();
+   const cot={...c0,num:c0.num||sigNumCot(emi.slice(0,4)),emitida:emi,valida:D.get('valida')||'',terminos:String(D.get('terminos')||'').trim(),items:L};
+   const usar=!!D.get('usarTotal'),pdf=e.submitter&&e.submitter.name==='pdf';
+   await mutT(id,n=>{n.cot=cot;if(usar)n.total=totCot(cot)});
+   toast('Cotización '+cot.num+' guardada.');verT(id);
+   if(pdf){const t2=S.trabajos.find(x=>x.id===id);t2&&hacerCotPdf(t2)}
+  });
+ }});
+}
+async function hacerCotPdf(t){
+ if(!t.cot||!(t.cot.items||[]).length){fCot(t.id);return}
+ const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+ if(!dl){toast('Aquí no se pueden descargar archivos.');return}
+ toast('Preparando cotización…');
+ let J;try{J=await cargarPdf()}catch(e){toast('No se pudo preparar el PDF. Revisa tu conexión.');return}
+ const d=new J({unit:'pt',format:'a4'}),W=595,H=842,M=48,m=t.moneda||'PEN',c=cli(t.clienteId),q=t.cot;let y=0;
+ const NAVY=[5,18,41],ROSA=[216,27,96],GRIS=[90,100,110];
+ const txt=(x,X,Y,o={})=>{d.setFont('helvetica',o.b?'bold':'normal');d.setFontSize(o.s||10);d.setTextColor(...(o.c||[15,15,15]));d.text(pdfTxt(x),X,Y,o.r?{align:'right'}:undefined)};
+ const salto=h=>{if(y+h>H-70){d.addPage();y=60}};
+ d.setFillColor(...NAVY);d.rect(0,0,W,104,'F');d.setFillColor(...ROSA);d.rect(0,104,W,4,'F');
+ txt(S.aj.negocio||'Producción audiovisual',M,50,{s:20,b:1,c:[255,255,255]});
+ txt('COTIZACIÓN',M,76,{s:10,c:[200,208,220]});
+ txt(q.num||'',W-M,50,{s:14,b:1,c:[255,255,255],r:1});
+ txt('Emitida el '+fd(q.emitida||hoy()),W-M,76,{s:10,c:[200,208,220],r:1});
+ y=146;
+ const col=(k,v,X,w)=>{txt(k.toUpperCase(),X,y,{s:8,c:GRIS});const ls=d.splitTextToSize(pdfTxt(v||'—'),w);d.setFont('helvetica','bold');d.setFontSize(11);d.setTextColor(15,15,15);d.text(ls,X,y+15);return ls.length};
+ const w2=(W-2*M-24)/2;
+ let n1=col('Cliente',c?(c.nombre+(c.empresa?' · '+c.empresa:'')):'',M,w2),n2=col('Proyecto',[t.titulo,nomArt(t)].filter(Boolean).join(' · '),M+w2+24,w2);y+=28+12*Math.max(n1,n2);
+ n1=col(c&&c.doc?'RUC / DNI':'Tipo de trabajo',c&&c.doc?c.doc:(t.tipo||''),M,w2);n2=col('Fecha tentativa',t.fecha?fd(t.fecha)+(t.lugar?' · '+t.lugar:''):'Por definir',M+w2+24,w2);y+=28+12*Math.max(n1,n2);
+ y+=6;
+ // tabla
+ const X1=M,X2=W-M-210,X3=W-M-120,X4=W-M;
+ d.setFillColor(242,244,247);d.rect(M,y,W-2*M,24,'F');
+ txt('Concepto',X1+10,y+16,{s:9,b:1,c:GRIS});txt('Cant.',X2+30,y+16,{s:9,b:1,c:GRIS,r:1});txt('P. unitario',X3+30,y+16,{s:9,b:1,c:GRIS,r:1});txt('Importe',X4-10,y+16,{s:9,b:1,c:GRIS,r:1});
+ y+=24;
+ q.items.forEach((x,i)=>{const ls=d.splitTextToSize(pdfTxt(x.concepto),X2-X1-30),h=Math.max(26,ls.length*13+13);salto(h);
+  if(i%2)d.setFillColor(250,251,252),d.rect(M,y,W-2*M,h,'F');
+  d.setFont('helvetica','normal');d.setFontSize(10);d.setTextColor(15,15,15);d.text(ls,X1+10,y+17);
+  txt(String(num(x.cant)||1),X2+30,y+17,{r:1});txt(fmtR(num(x.precio),m),X3+30,y+17,{r:1});txt(fmtR(r2(num(x.cant||1)*num(x.precio)),m),X4-10,y+17,{r:1,b:1});
+  y+=h;d.setDrawColor(230,233,236);d.line(M,y,W-M,y)});
+ y+=26;salto(40);
+ txt('TOTAL',X3-40,y,{s:11,b:1,c:GRIS,r:1});txt(fmtR(totCot(q),m),X4-10,y+2,{s:20,b:1,c:NAVY,r:1});y+=34;
+ // forma de pago
+ const tt={...t,total:totCot(q),pagos:[]},cs=cuotas(tt).filter(x=>x.monto>0);
+ if(cs.length){salto(30+cs.length*18);txt('Forma de pago',M,y,{s:11,b:1});y+=18;cs.forEach(x=>{txt('• '+x.concepto+(x.vence?' ('+fd(x.vence)+')':''),M,y,{s:10});txt(fmtR(x.monto,m),X4-10,y,{s:10,r:1});y+=17});y+=8}
+ if(q.valida){salto(26);txt('Esta cotización es válida hasta el '+fd(q.valida)+'.',M,y,{s:10,b:1,c:ROSA});y+=24}
+ if(q.terminos){const ls=d.splitTextToSize(pdfTxt(q.terminos),W-2*M);salto(24);txt('Términos y condiciones',M,y,{s:11,b:1});y+=16;d.setFont('helvetica','normal');d.setFontSize(9);d.setTextColor(...GRIS);ls.forEach(l=>{salto(13);d.text(l,M,y);y+=13})}
+ const pie=[S.aj.negocio,S.aj.cotContacto].filter(Boolean).join(' · ');
+ const np=d.getNumberOfPages();for(let i=1;i<=np;i++){d.setPage(i);d.setDrawColor(230,233,236);d.line(M,H-46,W-M,H-46);txt(pie,M,H-30,{s:8,c:GRIS});if(np>1)txt(i+' / '+np,W-M,H-30,{s:8,c:GRIS,r:1})}
+ const nom=(q.num||'cotizacion')+'-'+String(t.titulo).normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'').slice(0,40).toLowerCase()+'.pdf';
+ try{await dl.save({filename:nom,data:d.output('blob')});toast('Cotización lista.')}catch(e){if(e&&e.code==='declined')return;toast('No se pudo guardar el PDF aquí.')}
 }
 function textoRecibo(t,p){return ['CONSTANCIA DE PAGO',S.aj.negocio||'','','Cliente: '+nomCli(t),'Trabajo: '+t.titulo,'Monto recibido: '+fmtR(num(p.monto),t.moneda),'Fecha: '+fd(p.fecha),'Método: '+(p.metodo||''),p.nota?'Concepto: '+p.nota:'','Saldo pendiente: '+fmtR(saldo(t),t.moneda)].filter(x=>x!=='').join('\n')}
 
@@ -1511,6 +1603,9 @@ function fAjustes(){
   <label for="ae">Equipo</label><input id="ae" name="equipo" value="${esc(S.aj.equipo)}" placeholder="Nombres separados por comas: Ana, Jorge, Luis">
   <p class="hint">Para elegir rápido quién pagó un gasto y saber a quién hay que devolverle.</p>
   <label for="ai">Correos frecuentes para invitar</label><input id="ai" name="invFrec" inputmode="email" value="${esc(S.aj.invFrec)}" placeholder="camarografo@gmail.com, editora@gmail.com">
+  <h4>Cotizaciones</h4>
+  <div class="g2"><div><label for="acv">Validez (días)</label><input id="acv" name="cotValidez" inputmode="numeric" value="${esc(S.aj.cotValidez??15)}"></div><div><label for="acc">Contacto en el PDF</label><input id="acc" name="cotContacto" value="${esc(S.aj.cotContacto||'')}" placeholder="987 654 321 · correo · RUC"></div></div>
+  <label for="act">Términos por defecto</label><textarea id="act" name="cotTerminos" rows="5">${esc(S.aj.cotTerminos??TERM_DEF)}</textarea>
   <h4>Mensajes de WhatsApp</h4>
   <label for="t1">Para pedir el adelanto</label><textarea id="t1" name="tplAdelanto">${esc(S.aj.tplAdelanto)}</textarea>
   <label for="t2">Para una cuota intermedia</label><textarea id="t2" name="tplCuota">${esc(S.aj.tplCuota)}</textarea>
@@ -1538,7 +1633,7 @@ function fAjustes(){
   s.querySelector('#atm').addEventListener('change',e=>{tema=e.target.value;try{localStorage.setItem('cp-tema',tema)}catch(x){}if(tema)aplicaTema();else delete document.documentElement.dataset.theme});
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const F=new FormData(e.target);const g=parseInt(F.get('gracia'),10);
    const calAntes=S.aj.calId||'';
-   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')}});
+   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||15),cotContacto:String(F.get('cotContacto')||'').trim(),cotTerminos:String(F.get('cotTerminos')??'').trim()});
    guardarAj();cerrar();
    const enCal=S.trabajos.filter(t=>t.cal&&(t.cal.on||t.cal.ev)&&t.estadoProd!=='cancelado');
    if(mcpNs&&enCal.length&&(S.aj.calId||'')!==calAntes){toast(`Moviendo ${enCal.length} ${enCal.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);(async()=>{for(const t of enCal){await syncCal(t.id);await espera(400)}toast('Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')})()}
@@ -1666,6 +1761,8 @@ const A={
  nuevoT:id=>fTrabajo(null,id&&cli(id)?id:''),
  editarT:id=>{const t=S.trabajos.find(x=>x.id===id);t&&fTrabajo(t)},
  borrarT:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)quitarDeCal(t);(t&&t.gastos||[]).forEach(g=>g.foto&&borrarFoto(g.id));borrar('trabajos',id).catch(()=>{});cerrar();toast('Trabajo eliminado.')},
+ cotPdf:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)(t.cot&&(t.cot.items||[]).length?hacerCotPdf(t):fCot(t.id))},
+ fCot:id=>fCot(id),
  aprobar:id=>{mutT(id,n=>{n.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.')},
  entregar:id=>{mutT(id,n=>{n.estadoProd='entregado';n.entregadoEl=hoy()});toast(`Entregado. La cancelación vence en ${G()} ${G()===1?'día':'días'}.`)},
  pago:id=>fPago(id),gasto:id=>fGasto(id),

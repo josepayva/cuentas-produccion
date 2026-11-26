@@ -251,6 +251,35 @@ async def atajos(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def cotizacion(p):
+    b, ctx, pg = await nueva(p)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.fill('#ft', 'Videoclip Amanecer'); await pg.fill('#far', 'Banda Sol'); await pg.fill('#fo', '1000'); await pg.fill('#ff', '2026-12-10')
+    await pg.select_option('#fe', 'cotizado')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
+    await pg.click('#sheet [data-a=cotPdf]'); await pg.wait_for_timeout(300)
+    comprobar(await pg.locator('#sheet .qrow').count() == 1, 'abre el armado con una partida del monto actual')
+    await pg.fill('#sheet .qrow [data-f=p]', '2500')
+    await pg.click('#qpre [data-q="Edición y montaje"]'); await pg.wait_for_timeout(100)
+    await pg.locator('#sheet .qrow').nth(1).locator('[data-f=p]').fill('800')
+    await pg.locator('#sheet .qrow').nth(1).locator('[data-f=n]').fill('2')
+    comprobar('4,100.00' in await pg.inner_text('#qtotal'), 'suma partidas con cantidad: ' + await pg.inner_text('#qtotal'))
+    async with pg.expect_download() as dl:
+        await pg.click('#sheet button[name=pdf]')
+    d = await dl.value
+    ruta = '/tmp/cotizacion.pdf'; await d.save_as(ruta)
+    comprobar(d.suggested_filename.startswith('COT-2026-001'), 'numera la cotización: ' + d.suggested_filename)
+    st = await estado(pg)
+    t = servidor(st, 'trabajos')[0]
+    comprobar(t['total'] == 4100 and t['cot']['num'] == 'COT-2026-001' and len(t['cot']['items']) == 2, 'guarda partidas y actualiza el monto')
+    comprobar(t['cot']['valida'] > t['cot']['emitida'], 'pone la fecha de validez')
+    await pg.click('#sheet [data-a=aprobar]'); await pg.wait_for_timeout(500)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['estadoProd'] == 'produccion' and t['cot']['num'] == 'COT-2026-001', 'aprobar la convierte en trabajo y conserva la cotización')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:
