@@ -308,6 +308,35 @@ async def equipo(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def dolares(p):
+    b, ctx, pg = await nueva(p)
+    await ctx.route('https://open.er-api.com/**', lambda r: r.fulfill(json={'result': 'success', 'rates': {'USD': 1, 'PEN': 3.8, 'EUR': 0.95}}))
+    await nuevo_trabajo(pg, titulo='Soles', monto='1000')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.fill('#ft', 'Spot USA'); await pg.fill('#far', 'Marca X'); await pg.fill('#fo', '500'); await pg.fill('#ff', '2026-11-28')
+    await pg.select_option('#sheet select[name=moneda]', 'USD')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(5500)
+    st = await estado(pg)
+    aj = next(r['datos'] for r in st['rows'] if r['coleccion'] == 'ajustes' and r['id'] == 'general')
+    comprobar(aj.get('tc', {}).get('USD') == 3.8, 'trae el tipo de cambio solo al haber trabajos en dólares')
+    await pg.goto(URL + '?t=2#trabajos'); await pg.wait_for_timeout(1200)
+    await pg.locator('[data-a=verT]:visible', has_text='Spot USA').first.click(); await pg.wait_for_timeout(300)
+    comprobar('1,900.00' in await pg.inner_text('#sheet'), 'el trabajo en dólares muestra su equivalente en soles')
+    await pg.click('#sheet [data-a=pago]'); await pg.wait_for_timeout(200)
+    for k in ['C', '1', '0', '0', 'ok']:
+        await pg.click(f'#sheet .k[data-k="{k}"]')
+    await pg.wait_for_timeout(500)
+    t = next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == 'Spot USA')
+    comprobar(t['pagos'][0].get('tc') == 3.8, 'el pago en dólares guarda el tipo de cambio del día')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.goto(URL + '?t=3#reportes'); await pg.wait_for_timeout(1200)
+    await pg.select_option('#rmon', 'TODO'); await pg.wait_for_timeout(400)
+    rep = await pg.inner_text('#view')
+    comprobar('2,900.00' in rep and 'Convertido a soles' in rep, 'Reportes suma todo en soles: ' + rep[:0])
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

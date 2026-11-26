@@ -521,3 +521,5 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .gtab{margin-top:8px;font-size:14px}.gtab summary{cursor:pointer;color:var(--mute);font-weight:600;padding:6px 0}
 .gtab table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.gtab th,.gtab td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.gtab th:first-child,.gtab td:first-child{text-align:left}
 .gtab th{font-size:12px;color:var(--mute);font-weight:600}
+
+label.lbls{font-size:13px;font-weight:500;color:var(--mute);margin-top:4px}

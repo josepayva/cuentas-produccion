@@ -39,7 +39,7 @@ const colApp=id=>!id?ROSA:colHex(id);
 const swatches=(name,sel,conDef,defTxt)=>`<div class="sws">${conDef?`<label title="${esc(defTxt)}"><input type="radio" name="${name}" value=""${!sel?' checked':''}><span class="swd"><i style="background:${ROSA}"></i>${name==='color'?'Auto':'Del calendario'}</span></label>`:''}${GCOL.map(([v,n,hx])=>`<label title="${n}"><input type="radio" name="${name}" value="${v}"${sel===v?' checked':''} aria-label="${n}"><span style="background:${hx}"></span></label>`).join('')}</div>`;
 const ETQ_BASE=['Urgente','Cliente frecuente','Requiere factura','Viaje','Drone'];
 const S={oculto:false,gastosGen:[],clientes:[],artistas:[],vc:'clientes',qa:'',noPicker:false,trabajos:[],aj:{...DEF_AJ},modo:'cargando',aviso:'',f:'cobrar',q:'',qc:'',anio:null,mon:null,tag:'',tv:'lista',mes:'',dia:''};
-function normAj(d){const a={...DEF_AJ,...(d||{})};if(d&&d.plantilla&&!d.tplCancel&&d.plantilla!==OLD_TPL)a.tplCancel=d.plantilla;const g=parseInt(a.gracia,10);a.gracia=isFinite(g)?Math.max(0,Math.min(60,g)):3;return a}
+function normAj(d){const a={...DEF_AJ,...(d||{})};if(!a.tc||typeof a.tc!=='object')a.tc={};if(d&&d.plantilla&&!d.tplCancel&&d.plantilla!==OLD_TPL)a.tplCancel=d.plantilla;const g=parseInt(a.gracia,10);a.gracia=isFinite(g)?Math.max(0,Math.min(60,g)):3;return a}
 const normT=d=>({modoPago:'adelanto',adelantoReq:0,cuotas:[],presupuesto:{},pagos:[],gastos:[],etiquetas:[],invitados:[],...d,entrega:d.entrega!==undefined?d.entrega:(d.vence||'')});
 
 /* ---------- cálculos ---------- */
@@ -108,7 +108,23 @@ const barra=(t,cls='')=>{const tot=cobrarT(t);const p=tot>0?Math.min(100,pagado(
 function aCobrar(t){const e=estado(t),nx=proxima(t);if(e==='vencido')return montoVencido(t);if(nx&&(e==='adelanto'||nx.tipo==='cuota'))return nx.falta;return saldo(t)}
 const allPagos=()=>S.trabajos.flatMap(t=>(t.pagos||[]).map(p=>({...p,t,moneda:t.moneda||'PEN'})));
 function sumMon(list,fn){const o={};for(const x of list){const m=x.moneda||(x.t&&x.t.moneda)||'PEN';o[m]=(o[m]||0)+fn(x)}return o}
-function monto(o,real){const F=real?fmtR:fmt;const def=S.aj.moneda||'PEN';const ks=Object.keys(o).filter(k=>Math.abs(o[k])>0.004);if(!ks.length)return{p:F(0,def),o:''};ks.sort((a,b)=>(b===def)-(a===def));return{p:F(o[ks[0]],ks[0]),o:ks.slice(1).map(k=>'+ '+F(o[k],k)).join('  ')}}
+/* tipo de cambio: soles por cada unidad de la otra moneda (S.aj.tc = {USD:3.75, EUR:4.05}) */
+const tcDe=mon=>!mon||mon==='PEN'?1:num((S.aj.tc||{})[mon])||0;
+const aSoles=(v,mon,tc)=>r2(num(v)*(mon&&mon!=='PEN'?(num(tc)||tcDe(mon)):1));
+const otrasMonedas=()=>[...new Set([...S.trabajos.map(t=>t.moneda||'PEN'),...S.gastosGen.map(g=>g.moneda||'PEN')])].filter(x=>x!=='PEN');
+// Copia de un trabajo en soles: pagos con su propio tipo de cambio (si se guardó), lo demás con el de hoy
+function enSoles(t){const mon=t.moneda||'PEN';if(mon==='PEN')return t;const k=tcDe(mon),c=v=>r2(num(v)*k);
+ return {...t,moneda:'PEN',total:c(t.total),adelantoReq:c(t.adelantoReq),cuotas:(t.cuotas||[]).map(q=>({...q,monto:c(q.monto)})),
+  pagos:(t.pagos||[]).map(p=>({...p,monto:aSoles(p.monto,mon,p.tc)})),gastos:(t.gastos||[]).map(g=>({...g,monto:c(g.monto)})),
+  equipo:(t.equipo||[]).map(e=>({...e,acordado:c(e.acordado),pagos:(e.pagos||[]).map(p=>({...p,monto:c(p.monto)}))})),presupuesto:Object.fromEntries(Object.entries(t.presupuesto||{}).map(([kk,v])=>[kk,c(v)]))}}
+const gEnSoles=g=>(g.moneda||'PEN')==='PEN'?g:{...g,monto:aSoles(g.monto,g.moneda),moneda:'PEN'};
+async function actualizarTC(forzar){
+ if(!forzar&&(S.aj.tcAuto===false||S.aj.tcFecha===hoy()||!otrasMonedas().length))return false;
+ try{const r=await fetch('https://open.er-api.com/v6/latest/USD',{cache:'no-store'});const d=await r.json();const R=d&&d.rates;if(!R||!R.PEN)throw 0;
+  const tc={...(S.aj.tc||{}),USD:r2(R.PEN*1000)/1000};if(R.EUR)tc.EUR=Math.round(R.PEN/R.EUR*1000)/1000;
+  S.aj={...S.aj,tc,tcFecha:hoy()};guardarAj();return true}catch(e){return false}
+}
+function monto(o,real){const F=real?fmtR:fmt;const def=S.aj.moneda||'PEN';const ks=Object.keys(o).filter(k=>Math.abs(o[k])>0.004);if(!ks.length)return{p:F(0,def),o:''};ks.sort((a,b)=>(b===def)-(a===def));const otro=ks.slice(1).map(k=>'+ '+F(o[k],k)).join('  ');const conv=ks.length>1&&ks.every(k=>tcDe(k)>0)?'  ≈ '+F(r2(ks.reduce((a,k)=>a+o[k]*tcDe(k),0)),'PEN')+' en total':'';return{p:F(o[ks[0]],ks[0]),o:otro+conv}}
 const equipo=()=>{const s=new Set(String(S.aj.equipo||'').split(',').map(x=>x.trim()).filter(Boolean));S.trabajos.forEach(t=>(t.gastos||[]).forEach(g=>g.por&&s.add(g.por)));return [...s]};
 
 const okMail=s=>/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(s);
@@ -485,15 +501,17 @@ function vReportes(){
  S.trabajos.forEach(t=>{if(t.fecha)ys.add(+t.fecha.slice(0,4));(t.pagos||[]).forEach(p=>p.fecha&&ys.add(+p.fecha.slice(0,4)))});
  const y=String(S.anio||y0);
  const mons=[...new Set(S.trabajos.map(t=>t.moneda||'PEN'))];
- const m=S.mon&&mons.includes(S.mon)?S.mon:(mons.includes(S.aj.moneda)?S.aj.moneda:(mons[0]||S.aj.moneda||'PEN'));
- const ts=S.trabajos.filter(t=>(t.moneda||'PEN')===m);
+ const puedeTodo=mons.length>1&&mons.every(k=>tcDe(k)>0),todo=S.mon==='TODO'&&puedeTodo;
+ const m=todo?'PEN':S.mon&&mons.includes(S.mon)?S.mon:(mons.includes(S.aj.moneda)?S.aj.moneda:(mons[0]||S.aj.moneda||'PEN'));
+ const ts=todo?S.trabajos.map(enSoles):S.trabajos.filter(t=>(t.moneda||'PEN')===m);
+ const GG=todo?S.gastosGen.map(gEnSoles):S.gastosGen;
  const tY=ts.filter(t=>(t.fecha||'').startsWith(y)&&cuenta(t));
  const pY=ts.flatMap(t=>(t.pagos||[]).map(p=>({...p,t}))).filter(p=>(p.fecha||'').startsWith(y));
  const gY=tY.flatMap(t=>(t.gastos||[]).map(g=>({...g,t})));
  const fact=tY.reduce((a,t)=>a+num(t.total),0),eqY=tY.reduce((a,t)=>a+eqAcordado(t),0),prop=tY.reduce((a,t)=>a+propiosT(t)+eqAcordado(t),0),cob=pY.reduce((a,p)=>a+num(p.monto),0),pen=tY.reduce((a,t)=>a+saldo(t),0);
  const meses=MESL.map((n,i)=>({k:n[0].toUpperCase()+n.slice(1),v:pY.filter(p=>+p.fecha.slice(5,7)===i+1).reduce((a,p)=>a+num(p.monto),0)}));
  const enMes=(f,i)=>(f||'').startsWith(y)&&+String(f).slice(5,7)===i+1;
- const gastMes=i=>r2(ts.reduce((a,t)=>a+(t.gastos||[]).filter(g=>!g.reemb&&enMes(g.fecha,i)).reduce((s,g)=>s+num(g.monto),0)+(t.equipo||[]).flatMap(e=>e.pagos||[]).filter(p=>enMes(p.fecha,i)).reduce((s,p)=>s+num(p.monto),0),0)+S.gastosGen.filter(g=>(g.moneda||'PEN')===m&&enMes(g.fecha,i)).reduce((a,g)=>a+num(g.monto),0));
+ const gastMes=i=>r2(ts.reduce((a,t)=>a+(t.gastos||[]).filter(g=>!g.reemb&&enMes(g.fecha,i)).reduce((s,g)=>s+num(g.monto),0)+(t.equipo||[]).flatMap(e=>e.pagos||[]).filter(p=>enMes(p.fecha,i)).reduce((s,p)=>s+num(p.monto),0),0)+GG.filter(g=>(g.moneda||'PEN')===m&&enMes(g.fecha,i)).reduce((a,g)=>a+num(g.monto),0));
  grafDatos=meses.map((x,i)=>({k:x.k,cob:r2(x.v),gas:gastMes(i)}));grafMon=m;
  const mx=Math.max(...meses.map(x=>x.v),1);
  const deuda=agrupar(ts.filter(t=>cuenta(t)&&saldo(t)>0.004),t=>nomCli(t),saldo).slice(0,8);
@@ -502,7 +520,7 @@ function vReportes(){
  const artY=agrupar(tY.filter(t=>t.artistaId),t=>nomArt(t)||'—',t=>num(t.total)).slice(0,8);
  const temY=S.trabajos.filter(t=>(t.fecha||'').startsWith(y)&&cuenta(t)),nTem=temY.reduce((a,t)=>a+(parseInt(t.temas,10)||0),0),nVid=temY.filter(t=>parseInt(t.temas,10)>0).length;
  const ret=tY.reduce((a,t)=>a+retT(t),0);
- const gG=S.gastosGen.filter(g=>(g.moneda||'PEN')===m&&(g.fecha||'').startsWith(y)),totG=gG.reduce((a,g)=>a+num(g.monto),0),catG=agrupar(gG,g=>g.cat||'Otros',g=>num(g.monto));
+ const gG=GG.filter(g=>(g.moneda||'PEN')===m&&(g.fecha||'').startsWith(y)),totG=gG.reduce((a,g)=>a+num(g.monto),0),catG=agrupar(gG,g=>g.cat||'Otros',g=>num(g.monto));
  const etqs=agrupar(tY.flatMap(t=>(t.etiquetas||[]).map(e=>({e,v:num(t.total)}))),x=>x.e,x=>x.v).slice(0,8);
  const cats=agrupar(gY,g=>g.cat||'Otros',g=>num(g.monto));
  const conP=tY.filter(t=>Object.values(t.presupuesto||{}).some(v=>num(v)>0));
@@ -510,7 +528,7 @@ function vReportes(){
  const debe=agrupar(ts.flatMap(t=>(t.gastos||[]).filter(g=>g.por&&!g.dev)),g=>g.por,g=>num(g.monto));
  const porPagar=agrupar(ts.filter(t=>t.estadoProd!=='cancelado').flatMap(t=>t.equipo||[]),e=>e.persona||'Sin nombre',eqFalta);
  return `<div class="wrap"><h1 class="ttl">Reporte ${y}</h1>
- <div class="rtools"><select id="ranio" aria-label="Año">${[...ys].sort((a,b)=>b-a).map(v=>`<option${String(v)===y?' selected':''}>${v}</option>`).join('')}</select>${mons.length>1?`<select id="rmon" aria-label="Moneda">${opts(mons.map(k=>[k,MONEDAS[k]||k]),m)}</select>`:''}</div>
+ <div class="rtools"><select id="ranio" aria-label="Año">${[...ys].sort((a,b)=>b-a).map(v=>`<option${String(v)===y?' selected':''}>${v}</option>`).join('')}</select>${mons.length>1?`<select id="rmon" aria-label="Moneda">${opts([...(puedeTodo?[['TODO','Todo en soles (convertido)']]:[]),...mons.map(k=>[k,MONEDAS[k]||k])],todo?'TODO':m)}</select>`:''}</div>
  <div class="figs">
   <div><small>Facturado</small><b>${fmt(fact,m)}</b><small>${tY.length} ${tY.length===1?'trabajo':'trabajos'} con fecha en ${y}</small></div>
   <div><small>Cobrado</small><b>${fmt(cob,m)}</b><small>${pY.length} ${pY.length===1?'pago recibido':'pagos recibidos'} en ${y}</small></div>
@@ -534,7 +552,7 @@ function vReportes(){
    ${gG.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).slice(0,8).map(g=>`<div class="it gi" data-a="editarGen" data-id="${esc(g.id)}"><div><b>${fmt(num(g.monto),m)}</b> <span class="cat">${esc(g.cat)}</span><p>${g.det?esc(g.det)+' · ':''}${fd(g.fecha)}</p></div>${g.foto?`<button class="btn sm" data-a="fotoGen" data-id="${esc(g.id)}">Ver foto</button>`:''}</div>`).join('')}
    ${artY.length?`<div class="sh" style="margin-top:26px"><h2>Facturado por artista</h2><span>${y}</span></div>${barras(artY,m)}`:''}
    ${etqs.length?`<div class="sh" style="margin-top:26px"><h2>Facturado por etiqueta</h2><span>${y}</span></div>${barras(etqs,m)}`:''}</section>
- </div>${mons.length>1?`<p class="hint">Cada moneda se reporta por separado; cámbiala arriba.</p>`:''}</div>`;
+ </div>${todo?`<p class="hint">Convertido a soles: los pagos con el tipo de cambio del día en que se registraron; lo demás con el de ${S.aj.tcFecha?fd(S.aj.tcFecha):'hoy'} (${otrasMonedas().map(k=>k+' '+tcDe(k)).join(' · ')}).</p>`:mons.length>1?`<p class="hint">Cada moneda se reporta por separado; cámbiala arriba${puedeTodo?' o elige “Todo en soles”':''}.</p>`:''}</div>`;
 }
 const VISTAS={resumen:vResumen,trabajos:vTrabajos,clientes:vClientes,reportes:vReportes};
 const vista=()=>{const h=location.hash.slice(1);return VISTAS[h]?h:'resumen'};
@@ -572,6 +590,7 @@ function dTrabajo(id){
  return cab(esc(t.titulo),esc(quien(t))+(t.tipo?' · '+esc(t.tipo):''),avT(t))+`
  <div class="saldo"><span class="lbl">${e==='pagado'?'Pagado completo':e==='cotizado'?'Monto cotizado':'Saldo pendiente'}</span><b class="${e==='vencido'?'red':''}">${fmt(e==='pagado'||e==='cotizado'?cobrarT(t):sal,m)}</b>${chip(t)}</div>
  ${nx&&cuenta(t)&&e!=='pagado'?`<p class="ahora">Ahora toca: <b>${esc(nx.concepto)}</b> · ${fmt(nx.tipo==='entrega'?sal:nx.falta,m)}${nx.vence?' · '+(nx.tipo==='entrega'&&!t.entregadoEl?'entrega ':nx.tipo==='adelanto'&&t.modoPago!=='plan'?'antes del ':'vence ')+fd(nx.vence):''}</p>`:''}
+ ${m&&m!=='PEN'&&tcDe(m)>0&&cobrarT(t)>0?`<p class="hint">≈ ${fmt(aSoles(e==='pagado'||e==='cotizado'?cobrarT(t):sal,m),'PEN')} al tipo de cambio de ${S.aj.tcFecha?fd(S.aj.tcFecha):'hoy'} (S/ ${tcDe(m)} por ${m==='USD'?'dólar':m})</p>`:''}
  ${cuenta(t)&&cobrarT(t)>0?barra(t,'lg'):''}
  <dl class="kv">${nomArt(t)?`<div><dt>Artista o grupo</dt><dd style="white-space:normal">${esc(nomArt(t))}</dd></div>`:''}${temasTxt(t)?`<div><dt>Temas a grabar</dt><dd style="white-space:normal">${temasTxt(t)}${t.temasNom?'<br><span class="hint">'+esc(t.temasNom)+'</span>':''}</dd></div>`:''}<div><dt>Monto del trabajo</dt><dd>${fmt(tot,m)}</dd></div>${t.retencion?`<div><dt>Retención 4ta (8 %)</dt><dd>− ${fmt(retT(t),m)}</dd></div><div><dt>Neto a cobrar</dt><dd>${fmt(cobrarT(t),m)}</dd></div>`:''}${rb>0?`<div><dt>Gastos a reembolsar</dt><dd>+ ${fmt(rb,m)}</dd></div>`:''}<div><dt>Cobrado</dt><dd>${fmt(pg,m)}</dd></div><div><dt>Fecha del trabajo</dt><dd>${fd(t.fecha)||'—'}</dd></div><div><dt>${t.entregadoEl?'Entregado el':'Fecha de entrega'}</dt><dd>${fd(baseEntrega(t))||'—'}</dd></div><div><dt>Estado</dt><dd>${PROD[t.estadoProd]||'—'}</dd></div>${nDias(t)>1?`<div><dt>Rodaje · ${nDias(t)} días</dt><dd style="white-space:normal">${esc(textoDias(t,'\n')).replace(/\n/g,'<br>')}</dd></div>`:horario(t)?`<div><dt>Horario</dt><dd>${esc(horario(t))}</dd></div>`:''}${t.lugar?`<div><dt>Lugar</dt><dd style="white-space:normal">${esc(t.lugar)}</dd></div>`:''}</dl>
  ${tagsHtml(t)}
@@ -586,7 +605,7 @@ function dTrabajo(id){
  ${c&&c.telefono?'':`<p class="hint">Agrega el celular del cliente para enviarle recordatorios por WhatsApp.</p>`}
  ${cobrarT(t)>0?`<h4>Forma de pago <span>${t.modoPago==='plan'?'Plan de cuotas':'Adelanto y cancelación'}</span></h4>${cq.filter(q=>q.monto>0).map(cuotaHtml).join('')}`:''}
  <h4>Pagos recibidos <span>${ps.length}</span></h4>
- ${ps.length?ps.map(p=>`<div class="it gi" data-a="editarPago" data-id="${id}" data-p="${esc(p.id)}"><div><b>${fmt(num(p.monto),m)}</b><p>${fd(p.fecha)} · ${esc(p.metodo||'')}${p.nota?' · '+esc(p.nota):''}</p></div><button class="btn sm" data-a="reciboPdf" data-id="${id}" data-p="${esc(p.id)}" aria-label="Constancia de pago en PDF">PDF</button><button class="x sm" data-a="borrarPago" data-id="${id}" data-p="${esc(p.id)}" data-c="1" data-cl="¿Borrar?" aria-label="Borrar pago">×</button></div>`).join(''):`<p class="hint">Sin pagos registrados.</p>`}
+ ${ps.length?ps.map(p=>`<div class="it gi" data-a="editarPago" data-id="${id}" data-p="${esc(p.id)}"><div><b>${fmt(num(p.monto),m)}</b><p>${fd(p.fecha)} · ${esc(p.metodo||'')}${p.nota?' · '+esc(p.nota):''}${m&&m!=='PEN'&&(p.tc||tcDe(m))?' · ≈ '+fmt(aSoles(p.monto,m,p.tc),'PEN')+(p.tc?' (TC '+p.tc+')':''):''}</p></div><button class="btn sm" data-a="reciboPdf" data-id="${id}" data-p="${esc(p.id)}" aria-label="Constancia de pago en PDF">PDF</button><button class="x sm" data-a="borrarPago" data-id="${id}" data-p="${esc(p.id)}" data-c="1" data-cl="¿Borrar?" aria-label="Borrar pago">×</button></div>`).join(''):`<p class="hint">Sin pagos registrados.</p>`}
  <h4>Gastos de producción <button class="lnk" data-a="gasto" data-id="${id}">+ Agregar gasto</button></h4>
  ${gastosCirc(t)}
  ${gs.length?gs.map(g=>`<div class="it gi" data-a="editarG" data-id="${id}" data-p="${esc(g.id)}"><div><b>${fmt(num(g.monto),m)}</b> <span class="cat">${esc(g.cat||'Otros')}</span><p>${g.det?esc(g.det)+' · ':''}${fd(g.fecha)}${g.por?' · pagó '+esc(g.por):''}</p><p class="tags">${g.reemb?'<span class="tag">Lo reembolsa el cliente</span>':''}${g.por&&!g.dev?`<span class="tag warn">Por devolver a ${esc(g.por)}</span>`:''}${g.por&&g.dev?'<span class="tag">Devuelto</span>':''}</p></div>${g.foto?`<button class="btn sm" data-a="foto" data-id="${id}" data-p="${esc(g.id)}">Ver foto</button>`:''}</div>`).join(''):''}
@@ -825,7 +844,7 @@ function fPago(id,pid){
   s.querySelector('.kp').addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(b)tecla(b.dataset.k)});
   const ch=s.querySelector('.pchips');ch&&ch.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b){ex=String(r2(+b.dataset.v));fresco=true;pinta()}});
   const enviar=()=>{const v=calcExpr(ex);if(!(v>0)){err.textContent='Escribe un monto mayor a cero.';return}
-   const D=new FormData(F);const datos={monto:v,fecha:fecha||hoy(),metodo:metodo||'Otro',nota:String(D.get('nota')||'').trim()};
+   const D=new FormData(F);const datos={monto:v,fecha:fecha||hoy(),metodo:metodo||'Otro',nota:String(D.get('nota')||'').trim()};if(m!=='PEN'&&tcDe(m)>0&&!(pe&&pe.tc))datos.tc=tcDe(m);
    document.removeEventListener('keydown',kb);
    mutT(id,n=>{n.pagos=n.pagos||[];if(pe){const k=n.pagos.findIndex(x=>x.id===pe.id);if(k>=0)Object.assign(n.pagos[k],datos)}else n.pagos.push({id:uid(),...datos});if(D.get('entregar')){n.estadoProd='entregado';n.entregadoEl=hoy()}});
    const queda=Math.max(0,r2(sal-v));toast(pe?'Pago actualizado.':queda<=0.004?'Pago registrado. ¡Trabajo cobrado completo!':'Pago registrado. Queda '+fmt(queda,m)+'.');verT(id)};
@@ -1112,6 +1131,10 @@ function fAjustes(){
   <label for="an">Tu nombre o el de tu productora</label><input id="an" name="negocio" value="${esc(S.aj.negocio)}" placeholder="Aparece en los estados de cuenta">
   <div class="g2"><div><label for="am">Moneda principal</label><select id="am" name="moneda">${opts(Object.entries(MONEDAS),S.aj.moneda)}</select></div><div><label for="ag">Días de gracia</label><input id="ag" name="gracia" inputmode="numeric" value="${esc(S.aj.gracia)}"></div></div>
   <p class="hint">Un pago pasa a “vencido” cuando pasan estos días desde su fecha (la entrega, en el caso de la cancelación).</p>
+  <label>Tipo de cambio (soles por cada…)</label>
+  <div class="g2"><div><label for="atcu" class="lbls">Dólar (US$)</label><input id="atcu" name="tcUSD" inputmode="decimal" value="${esc((S.aj.tc||{}).USD||'')}" placeholder="3.75"></div><div><label for="atce" class="lbls">Euro (€)</label><input id="atce" name="tcEUR" inputmode="decimal" value="${esc((S.aj.tc||{}).EUR||'')}" placeholder="4.05"></div></div>
+  <label class="chk"><input type="checkbox" name="tcAuto"${S.aj.tcAuto!==false?' checked':''}> Actualizarlo solo cada día (cambio referencial del mercado)</label>
+  <p class="hint" id="atch">${S.aj.tcFecha?'Último: '+fd(S.aj.tcFecha)+'. ':''}Sirve para ver en soles los trabajos en dólares y sumar todo en Reportes. Cada pago en dólares guarda el tipo de cambio del día. <button type="button" class="lnk" id="atcb">Actualizar ahora</button></p>
   <label for="atd">Tipo de trabajo por defecto</label><input id="atd" name="tipoDef" list="tipos2" value="${esc(S.aj.tipoDef||'')}"><datalist id="tipos2">${TIPOS.map(x=>`<option value="${x}">`).join('')}</datalist>
   ${mcpNs?`<label>Calendario de Google donde guardar los trabajos</label>
   <div class="calsel"><select id="acal" name="calId"><option value="">Mi calendario principal</option>${S.aj.calId?`<option value="${esc(S.aj.calId)}" selected>${esc(S.aj.calNom||S.aj.calId)}</option>`:''}</select><button type="button" class="btn sm" id="acalc">Cargar mis calendarios</button></div><input type="hidden" name="calNom" id="acaln" value="${esc(S.aj.calNom||'')}">
@@ -1149,11 +1172,12 @@ function fAjustes(){
     catch(e){h.textContent=calMsg(e)}});
    acal.addEventListener('change',()=>{const o=acal.selectedOptions[0];s.querySelector('#acaln').value=acal.value?o.textContent:'';if(acal.value){['colRodaje','colEntrega'].forEach(n=>{const x=s.querySelector(`input[name=${n}][value=""]`);if(x)x.checked=true})}});
   }
+  s.querySelector('#atcb').addEventListener('click',async()=>{const h=s.querySelector('#atch');const b=s.querySelector('#atcb');b.disabled=true;b.textContent='Buscando…';const ok=await actualizarTC(true);b.disabled=false;b.textContent='Actualizar ahora';if(ok){s.querySelector('#atcu').value=S.aj.tc.USD||'';s.querySelector('#atce').value=S.aj.tc.EUR||'';toast('Tipo de cambio: S/ '+S.aj.tc.USD+' por dólar.')}else toast('No se pudo traer el tipo de cambio. Escríbelo a mano.')});
   s.querySelector('#aoc').addEventListener('change',e=>{ocultarInicio=e.target.checked;try{localStorage.setItem('cp-ocultar',ocultarInicio?'1':'0')}catch(x){}if(ocultarInicio){S.oculto=true;render()}});
   s.querySelector('#atm').addEventListener('change',e=>{tema=e.target.value;try{localStorage.setItem('cp-tema',tema)}catch(x){}if(tema)aplicaTema();else delete document.documentElement.dataset.theme});
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const F=new FormData(e.target);const g=parseInt(F.get('gracia'),10);
    const calAntes=S.aj.calId||'';
-   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||15),cotContacto:String(F.get('cotContacto')||'').trim(),cotTerminos:String(F.get('cotTerminos')??'').trim()});
+   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||15),tc:{...(S.aj.tc||{}),USD:num(F.get('tcUSD'))||undefined,EUR:num(F.get('tcEUR'))||undefined},tcAuto:F.has('tcAuto'),tcFecha:(num(F.get('tcUSD'))!==num((S.aj.tc||{}).USD)||num(F.get('tcEUR'))!==num((S.aj.tc||{}).EUR))?hoy():S.aj.tcFecha,cotContacto:String(F.get('cotContacto')||'').trim(),cotTerminos:String(F.get('cotTerminos')??'').trim()});
    guardarAj();cerrar();
    const enCal=S.trabajos.filter(t=>t.cal&&(t.cal.on||t.cal.ev)&&t.estadoProd!=='cancelado');
    if(mcpNs&&enCal.length&&(S.aj.calId||'')!==calAntes){toast(`Moviendo ${enCal.length} ${enCal.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);(async()=>{for(const t of enCal){await syncCal(t.id);await espera(400)}toast('Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')})()}
@@ -1203,7 +1227,7 @@ function planAvisos(){
  }
  return out.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id.localeCompare(b.id));
 }
-let pedidoNuevo='';try{pedidoNuevo=new URLSearchParams(location.search).get('nuevo')||''}catch(e){}
+let tcRevisado=false,pedidoNuevo='';try{pedidoNuevo=new URLSearchParams(location.search).get('nuevo')||''}catch(e){}
 let tmAvisos=0,ultPlan=null;try{ultPlan=localStorage.getItem('cp-avisos-plan')}catch(e){}
 function revisarAvisos(){
  if(!db||S.modo!=='nube'||tmAvisos)return;
@@ -1348,6 +1372,7 @@ let raf=0;function render(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;p
 function pintar(){
  if(/^#t-/.test(location.hash)){const id=location.hash.slice(3);if(S.trabajos.some(x=>x.id===id)){history.replaceState(null,'','#trabajos');setTimeout(()=>verT(id),0)}}
  revisarAvisos();
+ if(S.modo==='nube'&&!tcRevisado){tcRevisado=true;setTimeout(()=>actualizarTC(false),4000)}
  if(pedidoNuevo&&S.modo==='nube'){const k=pedidoNuevo;pedidoNuevo='';try{const u=new URL(location.href);u.searchParams.delete('nuevo');history.replaceState(null,'',u.pathname+u.search+u.hash)}catch(e){}
   setTimeout(()=>{if(k==='gasto')A.gastoRapido();else if(k==='pago')A.pagoRapido();else if(k==='trabajo')A.nuevoT();else if(k==='buscar')buscar()},200)}
  const ae=document.activeElement,aid=ae&&ae.id,sel=ae&&ae.selectionStart;
