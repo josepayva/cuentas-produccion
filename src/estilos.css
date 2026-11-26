@@ -504,3 +504,8 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .qrow .x.sm{width:36px;height:36px;font-size:18px}
 .qtot{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 4px;padding-top:10px;border-top:1px solid var(--line)}
 .qtot b{font-size:24px;font-variant-numeric:tabular-nums}
+
+/* pagos al equipo */
+.eqp{display:grid;grid-template-columns:1fr 1.25fr 1fr 36px;gap:6px;align-items:center;margin-bottom:6px}
+.eqp input,.eqp select{min-width:0}
+.eqp .x.sm{width:36px;height:36px;font-size:18px}

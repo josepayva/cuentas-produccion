@@ -58,7 +58,10 @@ const propiosT=t=>r2(gastosT(t)-reembT(t));
 const retT=t=>t.retencion?r2(num(t.total)*0.08):0;
 const cobrarT=t=>r2(num(t.total)+reembT(t)-retT(t));
 const saldo=t=>Math.max(0,r2(cobrarT(t)-pagado(t)));
-const gananciaT=t=>r2(num(t.total)-propiosT(t));
+const eqAcordado=t=>r2(((t.equipo)||[]).reduce((a,e)=>a+num(e.acordado),0));
+const eqPagadoP=e=>r2((e.pagos||[]).reduce((a,p)=>a+num(p.monto),0));
+const eqFalta=e=>Math.max(0,r2(num(e.acordado)-eqPagadoP(e)));
+const gananciaT=t=>r2(num(t.total)-propiosT(t)-eqAcordado(t));
 const cuenta=t=>!['cotizado','cancelado'].includes(t.estadoProd);
 const baseEntrega=t=>t.entregadoEl||t.entrega||'';
 const G=()=>S.aj.gracia??3;
@@ -463,7 +466,7 @@ function vReportes(){
  const tY=ts.filter(t=>(t.fecha||'').startsWith(y)&&cuenta(t));
  const pY=ts.flatMap(t=>(t.pagos||[]).map(p=>({...p,t}))).filter(p=>(p.fecha||'').startsWith(y));
  const gY=tY.flatMap(t=>(t.gastos||[]).map(g=>({...g,t})));
- const fact=tY.reduce((a,t)=>a+num(t.total),0),prop=tY.reduce((a,t)=>a+propiosT(t),0),cob=pY.reduce((a,p)=>a+num(p.monto),0),pen=tY.reduce((a,t)=>a+saldo(t),0);
+ const fact=tY.reduce((a,t)=>a+num(t.total),0),eqY=tY.reduce((a,t)=>a+eqAcordado(t),0),prop=tY.reduce((a,t)=>a+propiosT(t)+eqAcordado(t),0),cob=pY.reduce((a,p)=>a+num(p.monto),0),pen=tY.reduce((a,t)=>a+saldo(t),0);
  const meses=MESL.map((n,i)=>({k:n[0].toUpperCase()+n.slice(1),v:pY.filter(p=>+p.fecha.slice(5,7)===i+1).reduce((a,p)=>a+num(p.monto),0)}));
  const mx=Math.max(...meses.map(x=>x.v),1);
  const deuda=agrupar(ts.filter(t=>cuenta(t)&&saldo(t)>0.004),t=>nomCli(t),saldo).slice(0,8);
@@ -478,6 +481,7 @@ function vReportes(){
  const conP=tY.filter(t=>Object.values(t.presupuesto||{}).some(v=>num(v)>0));
  const pres=conP.reduce((a,t)=>a+Object.values(t.presupuesto).reduce((s,v)=>s+num(v),0),0),real=conP.reduce((a,t)=>a+gastosT(t),0);
  const debe=agrupar(ts.flatMap(t=>(t.gastos||[]).filter(g=>g.por&&!g.dev)),g=>g.por,g=>num(g.monto));
+ const porPagar=agrupar(ts.filter(t=>t.estadoProd!=='cancelado').flatMap(t=>t.equipo||[]),e=>e.persona||'Sin nombre',eqFalta);
  return `<div class="wrap"><h1 class="ttl">Reporte ${y}</h1>
  <div class="rtools"><select id="ranio" aria-label="Año">${[...ys].sort((a,b)=>b-a).map(v=>`<option${String(v)===y?' selected':''}>${v}</option>`).join('')}</select>${mons.length>1?`<select id="rmon" aria-label="Moneda">${opts(mons.map(k=>[k,MONEDAS[k]||k]),m)}</select>`:''}</div>
  <div class="figs">
@@ -485,7 +489,7 @@ function vReportes(){
   <div><small>Cobrado</small><b>${fmt(cob,m)}</b><small>${pY.length} ${pY.length===1?'pago recibido':'pagos recibidos'} en ${y}</small></div>
   <div><small>Pendiente de esos trabajos</small><b class="${pen>0?'red':''}">${fmt(pen,m)}</b><small>${fact>0?Math.round(pen/fact*100)+'% de lo facturado':'—'}</small></div>
   <div><small>Temas grabados</small><b>${nTem}</b><small>en ${nVid} ${nVid===1?'trabajo':'trabajos'} de ${y}</small></div>
-  <div><small>Ganancia de los trabajos</small><b>${fmt(fact-prop,m)}</b><small>Facturado menos gastos de producción (${fmt(prop,m)})</small></div>
+  <div><small>Ganancia de los trabajos</small><b>${fmt(fact-prop,m)}</b><small>Facturado menos gastos de producción${eqY>0?' y equipo':''} (${fmt(prop,m)})</small></div>
   <div><small>Ganancia neta</small><b class="${fact-prop-totG<0?'red':''}">${fmt(fact-prop-totG,m)}</b><small>Menos gastos del negocio (${fmt(totG,m)})</small></div>
   ${ret>0?`<div><small>Retenciones 4ta (8 %)</small><b>${fmt(ret,m)}</b><small>Pagos a cuenta para tu declaración anual</small></div>`:''}
  </div>
@@ -494,6 +498,7 @@ function vReportes(){
    <div class="sh" style="margin-top:26px"><h2>Gastos por categoría</h2><span>${y}</span></div>${barras(cats,m)}
    ${conP.length?`<div class="sh" style="margin-top:26px"><h2>Presupuesto vs real</h2><span>${conP.length} ${conP.length===1?'trabajo':'trabajos'}</span></div>${barras([{k:'Presupuestado',v:r2(pres)},{k:'Gastado',v:r2(real)}],m,real>pres?'r':'')}<p class="hint">${real>pres?'Gastaste '+fmt(real-pres,m)+' más de lo previsto.':'Quedaste '+fmt(pres-real,m)+' por debajo de lo previsto.'}</p>`:''}</section>
   <section><div class="sh"><h2>Quién te debe</h2><span>hoy</span></div>${barras(deuda,m,'r')}
+   <div class="sh" style="margin-top:26px"><h2>Por pagar al equipo</h2><span>hoy</span></div>${porPagar.length?barras(porPagar,m,'r'):`<p class="hint">No le debes nada a tu equipo.</p>`}
    <div class="sh" style="margin-top:26px"><h2>Por devolver al equipo</h2><span>hoy</span></div>${debe.length?barras(debe,m):`<p class="hint">Nadie del equipo tiene gastos pendientes de devolución.</p>`}
    <div class="sh" style="margin-top:26px"><h2>Facturado por tipo</h2><span>${y}</span></div>${barras(tipos,m)}
    <div class="sh" style="margin-top:26px"><h2>Cómo te pagan</h2><span>${y}</span></div>${barras(mets,m)}
@@ -558,6 +563,8 @@ function dTrabajo(id){
  ${gastosCirc(t)}
  ${gs.length?gs.map(g=>`<div class="it gi" data-a="editarG" data-id="${id}" data-p="${esc(g.id)}"><div><b>${fmt(num(g.monto),m)}</b> <span class="cat">${esc(g.cat||'Otros')}</span><p>${g.det?esc(g.det)+' · ':''}${fd(g.fecha)}${g.por?' · pagó '+esc(g.por):''}</p><p class="tags">${g.reemb?'<span class="tag">Lo reembolsa el cliente</span>':''}${g.por&&!g.dev?`<span class="tag warn">Por devolver a ${esc(g.por)}</span>`:''}${g.por&&g.dev?'<span class="tag">Devuelto</span>':''}</p></div>${g.foto?`<button class="btn sm" data-a="foto" data-id="${id}" data-p="${esc(g.id)}">Ver foto</button>`:''}</div>`).join(''):''}
  ${catsUsadas.length?(presTot>0?`<div class="pv"><span class="h">Categoría</span><span class="h">Presupuesto</span><span class="h">Gastado</span>${catsUsadas.map(k=>{const p=num(pres[k]),r=realCat(k);return `<span>${esc(k)}</span><span>${p>0?fmt(p,m):'—'}</span><span class="${p>0&&r>p?'red':''}">${fmt(r,m)}</span>`}).join('')}<span class="t">Total</span><span class="t">${fmt(presTot,m)}</span><span class="t ${gastosT(t)>presTot?'red':''}">${fmt(gastosT(t),m)}</span></div>`:`<div class="pv pv2"><span class="h">Categoría</span><span class="h">Gastado</span>${catsUsadas.map(k=>`<span>${esc(k)}</span><span>${fmt(realCat(k),m)}</span>`).join('')}<span class="t">Total</span><span class="t">${fmt(gastosT(t),m)}</span></div>`):''}
+ <h4>Pagos al equipo <button class="lnk" data-a="nuevoEq" data-id="${id}">+ Agregar persona</button></h4>
+ ${(t.equipo||[]).length?(t.equipo||[]).map(q=>{const f=eqFalta(q);return `<div class="it gi" data-a="editarEq" data-id="${id}" data-p="${esc(q.id)}"><div><b>${esc(q.persona||'Sin nombre')}</b>${q.rol?` <span class="cat">${esc(q.rol)}</span>`:''}<p>Acordado ${fmt(num(q.acordado),m)} · pagado ${fmt(eqPagadoP(q),m)}</p></div>${f>0.004?`<span class="tag warn">Falta ${fmt(f,m)}</span>`:num(q.acordado)>0?'<span class="tag">Pagado ✓</span>':''}</div>`}).join('')+`<p class="hint">Total del equipo: ${fmt(eqAcordado(t),m)}${(t.equipo||[]).some(q=>eqFalta(q)>0.004)?' · por pagar '+fmt(r2((t.equipo||[]).reduce((a,q)=>a+eqFalta(q),0)),m):''}</p>`:`<p class="hint">Anota lo acordado con camarógrafos, editores o asistentes y lo que ya les pagaste; se resta de la ganancia.</p>`}
  ${gs.length||tot>0?`<p class="gan"><span>Ganancia estimada${rb>0?' (sin contar reembolsos)':''}</span><b>${fmt(gananciaT(t),m)}</b></p>`:''}
  ${t.notas?`<h4>Notas</h4><p class="nota">${esc(t.notas)}</p>`:''}
  <div class="acts end"><button class="btn" data-a="editarT" data-id="${id}">${ic('edit')}Editar trabajo</button><button class="btn red" data-a="borrarT" data-id="${id}" data-c="1" data-cl="Toca otra vez para eliminar">Eliminar</button></div>`;
@@ -919,6 +926,41 @@ async function hacerPdf(tipo,t,p){
  const nom=(tipo==='recibo'?'constancia-pago-':'estado-de-cuenta-')+String(t.titulo).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'').slice(0,40).toLowerCase()+(tipo==='recibo'?'-'+(p.fecha||''):'')+'.pdf';
  try{await dl.save({filename:nom,data:blob});toast('PDF listo.')}catch(e){if(e&&e.code==='declined')return;toast(e&&e.code==='rate_limited'?'Ya hay una descarga esperando tu confirmación.':'No se pudo guardar el PDF aquí.')}
 }
+/* ---------- pagos al equipo ---------- */
+const ROLES=['Dirección de fotografía','Camarógrafo','Asistente de cámara','Foquista','Gaffer / luces','Sonido','Edición','Colorista','Maquillaje','Vestuario','Producción','Drone','Asistente'];
+function fEquipo(tid,eid){
+ const t=S.trabajos.find(x=>x.id===tid);if(!t)return;const m=t.moneda||'PEN';
+ const e0=eid?(t.equipo||[]).find(x=>x.id===eid):null;if(eid&&!e0)return;
+ const q=e0?JSON.parse(JSON.stringify(e0)):{id:uid(),persona:'',rol:'',acordado:'',pagos:[]};
+ const nombres=[...new Set([...String(S.aj.equipo||'').split(',').map(x=>x.trim()),...S.trabajos.flatMap(x=>(x.equipo||[]).map(e=>e.persona))].filter(Boolean))];
+ const freel=r2((t.gastos||[]).filter(g=>g.cat==='Personal / freelancers').reduce((a,g)=>a+num(g.monto),0));
+ abrir(cab(e0?'Pago al equipo':'Agregar persona',esc(t.titulo))+`<form novalidate>
+  <div class="g2"><div><label for="eqn">Persona <span class="req">*</span></label><input id="eqn" name="persona" list="eqnl" value="${esc(q.persona)}" autocomplete="off"><datalist id="eqnl">${nombres.map(n=>`<option value="${esc(n)}">`).join('')}</datalist></div>
+  <div><label for="eqr">Rol</label><input id="eqr" name="rol" list="eqrl" value="${esc(q.rol)}" autocomplete="off"><datalist id="eqrl">${ROLES.map(n=>`<option value="${esc(n)}">`).join('')}</datalist></div></div>
+  <label for="eqa">Monto acordado (${esc(m)})</label><input id="eqa" name="acordado" inputmode="decimal" value="${esc(q.acordado)}" placeholder="0.00">
+  <label>Pagos hechos</label><div id="eqpg"></div>
+  <div class="acts" style="margin:6px 0"><button type="button" class="btn sm" id="eqadd">${ic('plus')}Agregar pago</button><button type="button" class="btn sm" id="eqtodo">Pagar lo que falta hoy</button></div>
+  <p class="hint" id="eqres"></p>
+  ${freel>0?`<p class="hint">Este trabajo ya tiene ${fmt(freel,m)} en gastos “Personal / freelancers”. Si son los mismos pagos, bórralos de los gastos para no contarlos dos veces.</p>`:''}
+  <p class="err" id="eqerr" role="alert"></p>
+  <div class="acts"><button class="btn pri" type="submit">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${tid}">Cancelar</button>${e0?`<button class="btn red" type="button" data-a="borrarEq" data-id="${tid}" data-p="${esc(q.id)}" data-c="1" data-cl="Toca otra vez para quitar">Quitar</button>`:''}</div></form>`,{mount:s=>{
+  const box=s.querySelector('#eqpg'),res=s.querySelector('#eqres'),ac=s.querySelector('#eqa'),F=s.querySelector('form'),err=s.querySelector('#eqerr');
+  const leer=()=>{box.querySelectorAll('.eqp').forEach((r,i)=>{q.pagos[i].monto=r.querySelector('[data-f=m]').value;q.pagos[i].fecha=r.querySelector('[data-f=f]').value;q.pagos[i].metodo=r.querySelector('[data-f=t]').value})};
+  const resumen=()=>{const pag=r2(q.pagos.reduce((a,p)=>a+num(p.monto),0)),f=r2(num(ac.value)-pag);res.textContent=num(ac.value)>0?(f>0.004?`Pagado ${fmtR(pag,m)} · falta ${fmtR(f,m)}`:f<-0.004?`Pagaste ${fmtR(-f,m)} más de lo acordado.`:'Pagado completo ✓'):(pag>0?`Pagado ${fmtR(pag,m)}`:'')};
+  const pinta=()=>{box.innerHTML=q.pagos.length?q.pagos.map((p,i)=>`<div class="eqp"><input data-f="m" inputmode="decimal" aria-label="Monto del pago ${i+1}" value="${esc(p.monto)}" placeholder="0.00"><input data-f="f" type="date" aria-label="Fecha" value="${esc(p.fecha||hoy())}"><select data-f="t" aria-label="Método">${opts(METODOS.map(x=>[x,x]),p.metodo||'Yape')}</select><button type="button" class="x sm" data-r="${i}" aria-label="Quitar pago">×</button></div>`).join(''):'<p class="hint" style="margin:0">Todavía no hay pagos.</p>';resumen()};
+  pinta();
+  ac.addEventListener('input',resumen);box.addEventListener('input',()=>{leer();resumen()});box.addEventListener('change',()=>{leer();resumen()});
+  box.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b){leer();q.pagos.splice(+b.dataset.r,1);pinta()}});
+  s.querySelector('#eqadd').addEventListener('click',()=>{leer();q.pagos.push({id:uid(),monto:'',fecha:hoy(),metodo:'Yape'});pinta();box.querySelector('.eqp:last-child [data-f=m]').focus()});
+  s.querySelector('#eqtodo').addEventListener('click',()=>{leer();const f=r2(num(ac.value)-q.pagos.reduce((a,p)=>a+num(p.monto),0));if(!(f>0)){err.textContent=num(ac.value)>0?'Ya está pagado completo.':'Primero escribe el monto acordado.';return}err.textContent='';q.pagos.push({id:uid(),monto:String(f),fecha:hoy(),metodo:'Yape'});pinta()});
+  F.addEventListener('submit',e=>{e.preventDefault();leer();const D=new FormData(F);const persona=String(D.get('persona')||'').trim();
+   if(!persona){err.textContent='Escribe el nombre de la persona.';return}
+   const n={...q,persona,rol:String(D.get('rol')||'').trim(),acordado:r2(num(D.get('acordado'))),pagos:q.pagos.filter(p=>num(p.monto)>0).map(p=>({id:p.id||uid(),monto:r2(num(p.monto)),fecha:p.fecha||hoy(),metodo:p.metodo||'Otro'}))};
+   mutT(tid,x=>{x.equipo=x.equipo||[];const i=x.equipo.findIndex(y=>y.id===n.id);if(i>=0)x.equipo[i]=n;else x.equipo.push(n)});
+   toast(e0?'Pago al equipo actualizado.':persona+' agregado al equipo.');verT(tid)});
+  if(!e0)setTimeout(()=>s.querySelector('#eqn').focus(),60);
+ }});
+}
 /* ---------- cotizaciones ---------- */
 const PARTIDAS=['Dirección y realización','Rodaje (día)','Cámara y lentes','Equipo de luces','Drone','Edición y montaje','Colorización','Diseño de sonido','Movilidad','Locación','Maquillaje','Arte y vestuario'];
 const totCot=c=>r2(((c&&c.items)||[]).reduce((a,x)=>a+r2(num(x.cant||1)*num(x.precio)),0));
@@ -1213,6 +1255,7 @@ const A={
  borrarT:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)quitarDeCal(t);(t&&t.gastos||[]).forEach(g=>g.foto&&borrarFoto(g.id));borrar('trabajos',id).catch(()=>{});cerrar();toast('Trabajo eliminado.')},
  cotPdf:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)(t.cot&&(t.cot.items||[]).length?hacerCotPdf(t):fCot(t.id))},
  fCot:id=>fCot(id),
+ nuevoEq:id=>fEquipo(id),editarEq:(id,b)=>fEquipo(id,b.dataset.p),borrarEq:(id,b)=>{mutT(id,n=>{n.equipo=(n.equipo||[]).filter(x=>x.id!==b.dataset.p)});toast('Quitado del equipo.');verT(id)},
  aprobar:id=>{mutT(id,n=>{n.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.')},
  entregar:id=>{mutT(id,n=>{n.estadoProd='entregado';n.entregadoEl=hoy()});toast(`Entregado. La cancelación vence en ${G()} ${G()===1?'día':'días'}.`)},
  pago:id=>fPago(id),gasto:id=>fGasto(id),

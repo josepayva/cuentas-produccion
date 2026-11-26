@@ -28,7 +28,7 @@ async def nueva(p, entrar=True, **kw):
     await ctx.route('http://localhost:8765/**', servir)
     pg = await ctx.new_page()
     pg.errores = []
-    pg.on('pageerror', lambda e: pg.errores.append(str(e)))
+    pg.on('pageerror', lambda e: pg.errores.append(str(e) + ' @ ' + (e.stack or '')[:300]))
     await pg.goto(URL)
     await pg.evaluate("""localStorage.clear();localStorage.setItem('cp-rec-copia',new Date().toISOString().slice(0,10));
       localStorage.setItem('fake-sb',JSON.stringify({rows:[],session:null,users:{'a@b.com':'clave1234'}}))""")
@@ -277,6 +277,30 @@ async def cotizacion(p):
     await pg.click('#sheet [data-a=aprobar]'); await pg.wait_for_timeout(500)
     t = servidor(await estado(pg), 'trabajos')[0]
     comprobar(t['estadoProd'] == 'produccion' and t['cot']['num'] == 'COT-2026-001', 'aprobar la convierte en trabajo y conserva la cotización')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
+@prueba
+async def equipo(p):
+    b, ctx, pg = await nueva(p)
+    await nuevo_trabajo(pg, titulo='Clip Equipo', monto='3000')
+    await pg.click('#sheet [data-a=nuevoEq]'); await pg.wait_for_timeout(300)
+    await pg.fill('#eqn', 'Jorge'); await pg.fill('#eqr', 'Camarógrafo'); await pg.fill('#eqa', '600')
+    await pg.click('#eqadd'); await pg.locator('#eqpg .eqp [data-f=m]').fill('200')
+    comprobar('falta S/\xa0400.00' in await pg.inner_text('#eqres') or 'falta S/ 400.00' in await pg.inner_text('#eqres'), 'calcula lo que falta pagar')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(500)
+    txt = await pg.inner_text('#sheet')
+    comprobar('Jorge' in txt and 'Falta S' in txt and '400.00' in txt, 'el trabajo muestra a la persona y lo que falta')
+    comprobar('2,400.00' in txt, 'la ganancia resta lo acordado con el equipo')
+    await pg.click('#sheet [data-a=editarEq]'); await pg.wait_for_timeout(300)
+    await pg.click('#eqtodo'); await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(500)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(sum(x['monto'] for x in t['equipo'][0]['pagos']) == 600, '"Pagar lo que falta" completa el pago')
+    await pg.click('#sheet [data-a=nuevoEq]'); await pg.wait_for_timeout(300)
+    await pg.fill('#eqn', 'Ana'); await pg.fill('#eqa', '350'); await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(500)
+    await pg.click('#sheet [data-a=cerrar]'); await pg.goto(URL + '#reportes'); await pg.wait_for_timeout(900)
+    rep = await pg.inner_text('#view')
+    comprobar('Por pagar al equipo' in rep and 'Ana' in rep, 'Reportes muestra a quién le debes')
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
