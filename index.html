@@ -1687,7 +1687,7 @@ function fCliente(c){
  }});
 }
 function fAjustes(){
- abrir(cab('Ajustes')+`${window.CP&&CP.cuenta?`<div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div><div id="gcalbox" class="cuenta"></div><div id="respbox" class="cuenta"></div>`:''}<form novalidate>
+ abrir(cab('Ajustes')+`<form novalidate>
   ${window.CP&&CP.cuenta?`<h4 style="margin-top:4px">Avisos en el iPhone</h4><div id="pushbox" class="cuenta"></div>
   <div class="avt"><label class="chk"><input type="checkbox" name="avCobros"${(S.aj.avisos||{}).cobros!==false?' checked':''}> Cobros: el día que toca y si se vence</label>
   <label class="chk"><input type="checkbox" name="avEntregas"${(S.aj.avisos||{}).entregas!==false?' checked':''}> Entregas: el día antes</label>
@@ -1725,11 +1725,14 @@ function fAjustes(){
   <p class="hint">Puedes usar {cliente}, {trabajo}, {monto}, {saldo}, {fecha}, {entrega}, {cuota} y {negocio}.</p>
   <div class="acts"><button class="btn pri" type="submit">Guardar ajustes</button><button class="btn" type="button" data-a="tplDef">Restaurar mensajes</button></div></form>
   <h4>Respaldo y exportar</h4>
+  ${window.CP&&CP.cuenta?`<div id="respbox" class="cuenta"></div>`:''}
   <p class="hint">${S.modo==='nube'?'Tus cuentas se guardan en tu base de datos de Supabase y se sincronizan entre tu iPhone y tu Mac. Solo tú puedes verlas, con tu inicio de sesión.':'Ahora mismo los datos se guardan solo en este navegador.'} La copia de seguridad no incluye las fotos de comprobantes.</p>
   <div class="acts"><button class="btn" data-a="copiarTabla">Copiar tabla de trabajos</button><button class="btn" data-a="copiarGastos">Copiar tabla de gastos</button><button class="btn" data-a="copiarBackup">Copiar copia de seguridad</button></div>
   <label for="rb" style="font-weight:650;font-size:14px;display:block;margin:14px 0 6px">Restaurar desde una copia de seguridad</label>
   <textarea id="rb" placeholder="Pega aquí el texto de la copia de seguridad"></textarea>
-  <div class="acts"><button class="btn" data-a="restaurar" data-c="1" data-cl="Toca otra vez para restaurar">Restaurar</button></div>`,{mount:s=>{
+  <div class="acts"><button class="btn" data-a="restaurar" data-c="1" data-cl="Toca otra vez para restaurar">Restaurar</button></div>
+  ${window.CP&&CP.cuenta?`<h4>Google Calendar</h4><div id="gcalbox" class="cuenta"></div>
+  <h4>Tu cuenta</h4><div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div>`:''}`,{mount:s=>{
   const acal=s.querySelector('#acal');
   if(acal){
    s.querySelector('#acalc').addEventListener('click',async()=>{const h=s.querySelector('#acalh');h.textContent='Buscando tus calendarios…';
