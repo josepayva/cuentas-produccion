@@ -1,8 +1,8 @@
 /* Guarda la app en el equipo para que abra rápido y sin conexión.
    Siempre intenta traer la versión nueva primero; si no hay internet, usa la guardada. */
-const VERSION = 'cuentas-3cb5ec3014';
+const VERSION = 'cuentas-f27d0b8e14';
 const BASE = ['./', 'index.html', 'plataforma.js', 'vendor/supabase.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png', 'icons/logo-emotion.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(BASE)).then(() => self.skipWaiting()));
