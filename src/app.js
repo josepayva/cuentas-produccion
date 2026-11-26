@@ -1325,7 +1325,7 @@ function cargarLogo(){if(logoData)return logoData;logoData=fetch('icons/logo-emo
 async function pdfCot(t){
  let J;try{J=await cargarPdf()}catch(e){toast('No se pudo preparar el PDF. Revisa tu conexión.');return null}
  let logo=null;try{logo=await cargarLogo()}catch(e){}
- const d=new J({unit:'pt',format:'a4'});
+ const d=new J({unit:'pt',format:'a4',compress:true});
  if(t.cot.modo==='modelo')dibujarCotModelo(d,t,logo);else dibujarCotPartidas(d,t,logo);
  const nom=(t.cot.num||'cotizacion')+'-'+String(t.titulo||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'').slice(0,40).toLowerCase()+'.pdf';
  return {blob:d.output('blob'),nombre:nom};
@@ -1333,7 +1333,7 @@ async function pdfCot(t){
 function encabezadoPdf(d,t,logo,txt,W,M){
  const NAVY=[5,18,41],ROSA=[216,27,96];
  d.setFillColor(...NAVY);d.rect(0,0,W,108,'F');d.setFillColor(...ROSA);d.rect(0,108,W,3,'F');
- if(logo){try{d.addImage(logo,'PNG',M,26,168,54)}catch(e){logo=null}}
+ if(logo){try{d.addImage(logo,'PNG',M,26,168,54,'logo','FAST')}catch(e){logo=null}}
  if(!logo)txt(S.aj.negocio||'eMotion Studios',M,60,{s:22,b:1,c:[255,255,255]});
  txt(t.cot.modo==='modelo'?String(t.cot.titulo||'Cotización').split(/\s[–-]\s/)[0].toUpperCase():'COTIZACIÓN',W-M,42,{s:9,c:[200,208,220],r:1});
  txt(t.cot.num||'',W-M,64,{s:16,b:1,c:[255,255,255],r:1});
