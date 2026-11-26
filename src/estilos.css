@@ -474,3 +474,17 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .sync.off i,.sync.pend i{background:#F3AF58}.sync.off,.sync.pend{color:var(--ink)}
 .cpaviso span{flex:1}
 .cpaviso button{background:none;border:0;color:#fff;font-size:22px;line-height:1;min-width:32px;min-height:32px;cursor:pointer}
+
+/* buscador general */
+.ajb.bus{width:40px;padding:0;justify-content:center;flex:none}
+.bqin{display:flex;align-items:center;gap:10px;border:1.5px solid var(--line);border-radius:14px;padding:0 14px;background:var(--bg);margin:4px 0 14px}
+.bqin:focus-within{border-color:var(--red)}
+.bqin svg{width:20px;height:20px;flex:none;fill:none;stroke:var(--mute);stroke-width:2;stroke-linecap:round}
+.bqin input{flex:1;border:0!important;background:none!important;min-height:48px;font-size:17px;padding:0!important;outline:none;box-shadow:none!important;color:var(--ink)}
+.bq{margin-bottom:18px}
+.bq h3{display:flex;align-items:center;gap:8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:0 0 2px}
+.bq h3 span{font-weight:600;background:var(--line);border-radius:10px;padding:1px 8px;letter-spacing:0}
+.bqi{width:100%;padding:10px 6px;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;cursor:pointer;min-height:56px}
+.bqi:hover,.bqi:focus-visible{background:color-mix(in srgb,var(--line) 45%,transparent)}
+.bqi b{white-space:normal}
+.bqm{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}

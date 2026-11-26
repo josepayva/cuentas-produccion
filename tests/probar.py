@@ -146,6 +146,31 @@ async def borrar_sin_senal(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def buscador(p):
+    b, ctx, pg = await nueva(p)
+    await nuevo_trabajo(pg, titulo='Videoclip Ñañez', artista='Los Pávidos', monto='3500', fr='1200')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('[data-a=buscar]'); await pg.wait_for_timeout(200)
+    comprobar(await pg.evaluate("document.activeElement.id") == 'qg', 'abre el buscador con el cursor listo')
+    await pg.fill('#qg', 'pavidos nanez'); await pg.wait_for_timeout(300)
+    comprobar('Videoclip Ñañez' in await pg.inner_text('#qgr'), 'encuentra sin tildes ni mayúsculas')
+    await pg.fill('#qg', 'pavidos'); await pg.wait_for_timeout(300)
+    comprobar('ARTISTAS' in (await pg.inner_text('#qgr')).upper(), 'encuentra al artista')
+    await pg.fill('#qg', '1200'); await pg.wait_for_timeout(300)
+    comprobar('PAGOS' in (await pg.inner_text('#qgr')).upper(), 'encuentra el pago por monto')
+    await pg.locator('#qgr [data-a=editarPago]').first.click(); await pg.wait_for_timeout(300)
+    comprobar(await pg.locator('#sheet #pf').count() == 1, 'tocar el pago abre el pago para editarlo')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+    await pg.keyboard.press('Control+k'); await pg.wait_for_timeout(300)
+    comprobar(await pg.locator('#sheet #qg').input_value() == '1200', 'Ctrl/⌘+K abre el buscador y recuerda la búsqueda')
+    await pg.fill('#qg', 'zzzz'); await pg.wait_for_timeout(300)
+    comprobar('No encontré' in await pg.inner_text('#qgr'), 'avisa cuando no hay resultados')
+    await pg.fill('#qg', 'videoclip'); await pg.wait_for_timeout(300)
+    await pg.screenshot(path='/tmp/buscador.png')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

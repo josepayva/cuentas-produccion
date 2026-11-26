@@ -1021,11 +1021,57 @@ function tablaGastos(){
 }
 
 /* ---------- acciones ---------- */
+/* ---------- buscador general ---------- */
+// Busca en trabajos, clientes, artistas, pagos y gastos. Cada palabra debe aparecer (sin tildes ni mayúsculas).
+function buscarTodo(q){
+ const w=nrm(q).split(' ').filter(Boolean);if(!w.length)return null;
+ const ok=(...xs)=>{const n=nrm(xs.filter(x=>x!=null&&x!=='').join(' '));return w.every(x=>n.includes(x))};
+ const mto=v=>{const n=num(v);return n?[String(n),fmtR(n,'PEN').replace(/[^\d.,]/g,''),Math.round(n)].join(' '):''};
+ const R={t:[],c:[],a:[],p:[],g:[]};
+ for(const t of S.trabajos){
+  const est=PROD[t.estadoProd]||'';
+  if(ok(t.titulo,quien(t),nomCli(t),t.tipo,t.lugar,t.notas,(t.etiquetas||[]).join(' '),t.temasNom,est,fd(t.fecha),mto(t.total)))R.t.push(t);
+  for(const p of t.pagos||[])if(ok(mto(p.monto),p.metodo,p.nota,fd(p.fecha),t.titulo,quien(t),'pago cobro'))R.p.push({t,p});
+  for(const g of t.gastos||[])if(ok(mto(g.monto),g.cat,g.det,fd(g.fecha),t.titulo,quien(t),'gasto'))R.g.push({t,g});
+ }
+ for(const c of S.clientes)if(ok(c.nombre,c.telefono,c.email,c.notas,c.doc,'cliente'))R.c.push(c);
+ for(const a of S.artistas)if(ok(a.nombre,a.telefono,a.email,a.notas,'artista'))R.a.push(a);
+ for(const g of S.gastosGen||[])if(ok(mto(g.monto),g.cat,g.det,fd(g.fecha),'gasto general'))R.g.push({g});
+ const rec=(x,y)=>(y||'').localeCompare(x||'');
+ R.t.sort((x,y)=>rec(x.fecha,y.fecha));R.p.sort((x,y)=>rec(x.p.fecha,y.p.fecha));R.g.sort((x,y)=>rec(x.g.fecha,y.g.fecha));
+ return R;
+}
+function resultadosBusqueda(q){
+ const R=buscarTodo(q);
+ if(!R)return `<p class="hint">Escribe el nombre de un trabajo, cliente o artista, un monto (por ejemplo 1500), un método de pago o una palabra de las notas.</p>`;
+ const tot=R.t.length+R.c.length+R.a.length+R.p.length+R.g.length;
+ if(!tot)return `<p class="hint">No encontré nada con “${esc(q)}”. Prueba con menos palabras.</p>`;
+ const MAX=8,grupo=(tit,arr,fila)=>arr.length?`<div class="bq"><h3>${tit}<span>${arr.length}</span></h3>${arr.slice(0,MAX).map(fila).join('')}${arr.length>MAX?`<p class="hint">y ${arr.length-MAX} más: escribe otra palabra para afinar.</p>`:''}</div>`:'';
+ const fila=(a,id,p,tit,sub,der)=>`<button type="button" class="it bqi" data-a="${a}" data-id="${esc(id)}"${p?` data-p="${esc(p)}"`:''}><div><b>${esc(tit)}</b><p>${sub}</p></div>${der?`<span class="bqm">${der}</span>`:''}</button>`;
+ return grupo('Trabajos',R.t,t=>fila('verT',t.id,'',t.titulo||'Trabajo',esc([quien(t),PROD[t.estadoProd],fd(t.fecha)].filter(Boolean).join(' · ')),fmt(num(t.total),t.moneda)))
+  +grupo('Clientes',R.c,c=>fila('verC',c.id,'',c.nombre,esc([c.telefono,c.email].filter(Boolean).join(' · ')||'Cliente'),''))
+  +grupo('Artistas',R.a,a=>fila('verA',a.id,'',a.nombre,esc([a.telefono,a.email].filter(Boolean).join(' · ')||'Artista'),''))
+  +grupo('Pagos',R.p,({t,p})=>fila('editarPago',t.id,p.id,t.titulo||'Trabajo',esc([fd(p.fecha),p.metodo,p.nota].filter(Boolean).join(' · ')),fmt(num(p.monto),t.moneda)))
+  +grupo('Gastos',R.g,({t,g})=>t?fila('editarG',t.id,g.id,g.det||g.cat||'Gasto',esc([t.titulo,g.cat,fd(g.fecha)].filter(Boolean).join(' · ')),fmt(num(g.monto),t.moneda))
+   :fila('editarGen',g.id,'',g.det||g.cat||'Gasto general',esc(['Gasto general',g.cat,fd(g.fecha)].filter(Boolean).join(' · ')),fmt(num(g.monto),g.moneda||S.aj.moneda||'PEN')));
+}
+function buscar(){
+ abrir(cab('Buscar')+`<label class="bqin"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="qg" type="search" placeholder="Trabajo, cliente, monto, nota…" aria-label="Buscar en todo" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(S.qg||'')}"></label><div id="qgr" aria-live="polite">${resultadosBusqueda(S.qg||'')}</div>`,{mount:s=>{
+  const i=s.querySelector('#qg'),r=s.querySelector('#qgr');let tm=0;
+  i.addEventListener('input',()=>{clearTimeout(tm);tm=setTimeout(()=>{S.qg=i.value;r.innerHTML=resultadosBusqueda(i.value)},120)});
+  i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const b=r.querySelector('.bqi');if(b)b.click()}});
+  setTimeout(()=>{i.focus();i.select()},60);
+ }});
+}
+document.addEventListener('keydown',e=>{
+ const k=e.key&&e.key.toLowerCase(),enCampo=/^(input|textarea|select)$/i.test((e.target&&e.target.tagName)||'')||(e.target&&e.target.isContentEditable);
+ if((k==='k'&&(e.metaKey||e.ctrlKey))||(k==='/'&&!enCampo&&ov.hidden)){if(document.getElementById('login'))return;e.preventDefault();buscar()}
+});
 function verT(id){if(!S.trabajos.find(x=>x.id===id)){cerrar();return}abrir(dTrabajo(id),{live:()=>dTrabajo(id)})}
 function verC(id){if(!cli(id)){cerrar();return}abrir(dCliente(id),{live:()=>dCliente(id)})}
 function verA(id){if(!art(id)){cerrar();return}abrir(dArtista(id),{live:()=>dArtista(id)})}
 const A={
- cerrar,verT,verC,verA,
+ cerrar,verT,verC,verA,buscar,
  ojo:()=>{S.oculto=!S.oculto;render()},
  vc:k=>{S.vc=k==='artistas'?'artistas':'clientes';render()},
  importar:()=>importar(),
