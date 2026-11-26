@@ -301,6 +301,10 @@ async def equipo(p):
     await pg.click('#sheet [data-a=cerrar]'); await pg.goto(URL + '#reportes'); await pg.wait_for_timeout(900)
     rep = await pg.inner_text('#view')
     comprobar('Por pagar al equipo' in rep and 'Ana' in rep, 'Reportes muestra a quién le debes')
+    comprobar(await pg.locator('svg.graf path.gc2').count() >= 1, 'el gráfico mensual muestra los pagos al equipo como gasto')
+    await pg.locator('.ghit').nth(10).click(); await pg.wait_for_timeout(200)
+    comprobar('Noviembre' in await pg.inner_text('#gtip'), 'tocar un mes muestra su detalle')
+    await pg.locator('svg.graf').scroll_into_view_if_needed(); await pg.screenshot(path='/tmp/grafico.png')
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 

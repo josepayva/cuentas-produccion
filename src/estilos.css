@@ -509,3 +509,15 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .eqp{display:grid;grid-template-columns:1fr 1.25fr 1fr 36px;gap:6px;align-items:center;margin-bottom:6px}
 .eqp input,.eqp select{min-width:0}
 .eqp .x.sm{width:36px;height:36px;font-size:18px}
+
+/* gráfico mensual: azul/naranja validados para daltonismo; texto en tintas de texto */
+.graf{width:100%;height:auto;display:block;--c1:light-dark(#257de0,#338ced);--c2:light-dark(#f47230,#e76624)}
+.graf .gc1,.gleg .gc1{fill:var(--c1);background:var(--c1)}.graf .gc2,.gleg .gc2{fill:var(--c2);background:var(--c2)}
+.gleg{--c1:light-dark(#257de0,#338ced);--c2:light-dark(#f47230,#e76624);display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;color:var(--mute);margin:2px 0 4px}
+.gleg span{display:inline-flex;align-items:center;gap:7px}.gleg i{width:12px;height:12px;border-radius:3px;display:inline-block}.gleg b{color:var(--ink)}
+.graf .grl{stroke:var(--line);stroke-width:1}.graf .gax{fill:var(--mute);font-size:15px;font-family:inherit}
+.graf .ghit{fill:transparent;cursor:pointer;outline:none}.graf .ghit:hover,.graf .ghit.on,.graf .ghit:focus-visible{fill:color-mix(in srgb,var(--ink) 7%,transparent)}
+.gtip{font-size:13px;color:var(--mute);min-height:18px;margin:0 0 4px}.gtip b{color:var(--ink)}
+.gtab{margin-top:8px;font-size:14px}.gtab summary{cursor:pointer;color:var(--mute);font-weight:600;padding:6px 0}
+.gtab table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.gtab th,.gtab td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.gtab th:first-child,.gtab td:first-child{text-align:left}
+.gtab th{font-size:12px;color:var(--mute);font-weight:600}

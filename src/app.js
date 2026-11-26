@@ -450,6 +450,30 @@ function vClientes(){
  <div class="bar-tools"><input class="search" id="${a?'qa':'qc'}" type="search" placeholder="${a?'Buscar artista o grupo':'Buscar cliente'}" value="${esc(a?S.qa:S.qc)}" autocomplete="off"><button class="btn" data-a="${a?'nuevoA':'nuevoC'}">+ ${a?'Artista':'Cliente'}</button><button class="btn" data-a="importar">Importar contactos</button></div>
  <div id="${a?'lsta':'lstc'}">${a?listaA():listaC()}</div></div>`;
 }
+/* ---------- gráfico: cobrado y gastos por mes ---------- */
+// Columnas agrupadas, un solo eje. Colores validados (azul/naranja) para daltonismo; tabla como alternativa.
+function grafMeses(datos,m){
+ const W=480,H=210,L=44,R=6,T=12,B=30,iw=W-L-R,ih=H-T-B,n=datos.length;
+ const mx=Math.max(1,...datos.flatMap(x=>[x.cob,x.gas]));
+ const nice=v=>{const p=Math.pow(10,Math.floor(Math.log10(v)));for(const k of [1,2,2.5,5,10])if(k*p>=v)return k*p;return 10*p},paso=nice(mx/4),tope=paso*4;
+ const yv=v=>T+ih-(v/tope)*ih,gw=iw/n,bw=Math.max(4,Math.min(16,(gw-8)/2));
+ const corto=v=>v>=1000?(Math.round(v/100)/10).toString().replace(/\.0$/,'')+' mil':String(Math.round(v));
+ const barra=(x,v,c)=>{if(v<=0)return '';const y=yv(v),h=T+ih-y,r=Math.min(4,h);return `<path class="${c}" d="M${x},${T+ih}V${y+r}Q${x},${y} ${x+r},${y}H${x+bw-r}Q${x+bw},${y} ${x+bw},${y+r}V${T+ih}Z"/>`};
+ let g='';
+ for(let i=0;i<=4;i++){const v=paso*i,y=yv(v);g+=`<line class="grl" x1="${L}" x2="${W-R}" y1="${y}" y2="${y}"/><text class="gax" x="${L-6}" y="${y+4}" text-anchor="end">${corto(v)}</text>`}
+ datos.forEach((d,i)=>{const x0=L+i*gw+(gw-2*bw-2)/2;
+  g+=barra(x0,d.cob,'gc1')+barra(x0+bw+2,d.gas,'gc2')
+   +`<text class="gax" x="${L+i*gw+gw/2}" y="${H-8}" text-anchor="middle">${d.k.slice(0,1)}</text>`
+   +`<rect class="ghit" data-chm="${i}" x="${L+i*gw}" y="${T}" width="${gw}" height="${ih+B}" tabindex="0" role="button" aria-label="${esc(d.k)}: cobrado ${esc(fmtR(d.cob,m))}, gastos ${esc(fmtR(d.gas,m))}"><title>${esc(d.k)}: cobrado ${esc(fmtR(d.cob,m))} · gastos ${esc(fmtR(d.gas,m))}</title></rect>`});
+ const tot=datos.reduce((a,d)=>({c:a.c+d.cob,g:a.g+d.gas}),{c:0,g:0});
+ return `<div class="gleg"><span><i class="gc1"></i>Cobrado <b>${fmt(r2(tot.c),m)}</b></span><span><i class="gc2"></i>Gastos <b>${fmt(r2(tot.g),m)}</b></span></div>
+  <p class="gtip" id="gtip" aria-live="polite">Toca un mes para ver el detalle.</p>
+  <svg class="graf" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cobrado y gastos por mes">${g}</svg>
+  <details class="gtab"><summary>Ver como tabla</summary><table><thead><tr><th>Mes</th><th>Cobrado</th><th>Gastos</th><th>Diferencia</th></tr></thead><tbody>${datos.map(d=>`<tr><td>${esc(d.k)}</td><td>${d.cob?fmt(d.cob,m):'—'}</td><td>${d.gas?fmt(d.gas,m):'—'}</td><td class="${d.cob-d.gas<0?'red':''}">${d.cob||d.gas?fmt(r2(d.cob-d.gas),m):'—'}</td></tr>`).join('')}</tbody></table></details>`;
+}
+let grafDatos=null,grafMon='PEN';
+function grafTip(i){const d=grafDatos&&grafDatos[i],el=document.getElementById('gtip');if(!d||!el)return;el.innerHTML=`<b>${esc(d.k)}</b> · cobrado ${fmt(d.cob,grafMon)} · gastos ${fmt(d.gas,grafMon)}`;document.querySelectorAll('.ghit').forEach(r=>r.classList.toggle('on',r.dataset.chm===String(i)))}
+['pointerover','click','focusin'].forEach(ev=>document.addEventListener(ev,e=>{const r=e.target.closest&&e.target.closest('[data-chm]');if(r)grafTip(+r.dataset.chm)}));
 function barras(list,m,cls=''){
  if(!list.length)return `<p class="hint">Sin datos todavía.</p>`;
  const mx=Math.max(...list.map(x=>x.v),1);
@@ -468,6 +492,9 @@ function vReportes(){
  const gY=tY.flatMap(t=>(t.gastos||[]).map(g=>({...g,t})));
  const fact=tY.reduce((a,t)=>a+num(t.total),0),eqY=tY.reduce((a,t)=>a+eqAcordado(t),0),prop=tY.reduce((a,t)=>a+propiosT(t)+eqAcordado(t),0),cob=pY.reduce((a,p)=>a+num(p.monto),0),pen=tY.reduce((a,t)=>a+saldo(t),0);
  const meses=MESL.map((n,i)=>({k:n[0].toUpperCase()+n.slice(1),v:pY.filter(p=>+p.fecha.slice(5,7)===i+1).reduce((a,p)=>a+num(p.monto),0)}));
+ const enMes=(f,i)=>(f||'').startsWith(y)&&+String(f).slice(5,7)===i+1;
+ const gastMes=i=>r2(ts.reduce((a,t)=>a+(t.gastos||[]).filter(g=>!g.reemb&&enMes(g.fecha,i)).reduce((s,g)=>s+num(g.monto),0)+(t.equipo||[]).flatMap(e=>e.pagos||[]).filter(p=>enMes(p.fecha,i)).reduce((s,p)=>s+num(p.monto),0),0)+S.gastosGen.filter(g=>(g.moneda||'PEN')===m&&enMes(g.fecha,i)).reduce((a,g)=>a+num(g.monto),0));
+ grafDatos=meses.map((x,i)=>({k:x.k,cob:r2(x.v),gas:gastMes(i)}));grafMon=m;
  const mx=Math.max(...meses.map(x=>x.v),1);
  const deuda=agrupar(ts.filter(t=>cuenta(t)&&saldo(t)>0.004),t=>nomCli(t),saldo).slice(0,8);
  const tipos=agrupar(tY,t=>t.tipo||'Sin tipo',t=>num(t.total)).slice(0,8);
@@ -494,7 +521,8 @@ function vReportes(){
   ${ret>0?`<div><small>Retenciones 4ta (8 %)</small><b>${fmt(ret,m)}</b><small>Pagos a cuenta para tu declaración anual</small></div>`:''}
  </div>
  <div class="rgrid">
-  <section><div class="sh"><h2>Cobrado por mes</h2><span>${y}</span></div>${meses.map(x=>`<div class="hb"><span>${x.k}</span><div><i style="width:${(x.v/mx*100).toFixed(1)}%"></i></div><b>${x.v?fmt(x.v,m):'—'}</b></div>`).join('')}
+  <section><div class="sh"><h2>Cobrado y gastos por mes</h2><span>${y}</span></div>${grafMeses(grafDatos,m)}
+   <p class="hint">Gastos = de producción (sin reembolsables) + pagos al equipo + gastos del negocio, según su fecha.</p>
    <div class="sh" style="margin-top:26px"><h2>Gastos por categoría</h2><span>${y}</span></div>${barras(cats,m)}
    ${conP.length?`<div class="sh" style="margin-top:26px"><h2>Presupuesto vs real</h2><span>${conP.length} ${conP.length===1?'trabajo':'trabajos'}</span></div>${barras([{k:'Presupuestado',v:r2(pres)},{k:'Gastado',v:r2(real)}],m,real>pres?'r':'')}<p class="hint">${real>pres?'Gastaste '+fmt(real-pres,m)+' más de lo previsto.':'Quedaste '+fmt(pres-real,m)+' por debajo de lo previsto.'}</p>`:''}</section>
   <section><div class="sh"><h2>Quién te debe</h2><span>hoy</span></div>${barras(deuda,m,'r')}
