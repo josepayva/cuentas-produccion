@@ -949,7 +949,8 @@ function fAjustes(){
   <div class="avt"><label class="chk"><input type="checkbox" name="avCobros"${(S.aj.avisos||{}).cobros!==false?' checked':''}> Cobros: el día que toca y si se vence</label>
   <label class="chk"><input type="checkbox" name="avEntregas"${(S.aj.avisos||{}).entregas!==false?' checked':''}> Entregas: el día antes</label>
   <label class="chk"><input type="checkbox" name="avRodajes"${(S.aj.avisos||{}).rodajes!==false?' checked':''}> Rodajes: el día antes</label></div>
-  <p class="hint">Llegan a las 8 a.m. Muestran el trabajo y el artista, nunca montos ni datos del cliente. Guarda los ajustes después de cambiar estas casillas.</p>`:''}
+  <p class="hint">Llegan a las 8 a.m. Muestran el trabajo y el artista, nunca montos ni datos del cliente. Guarda los ajustes después de cambiar estas casillas.</p>
+  <h4>Atajos y Siri</h4><div id="atajobox" class="cuenta"></div>`:''}
   <label class="chk"><input type="checkbox" id="aoc"${ocultarInicio?' checked':''}> Ocultar los montos al abrir la app en este equipo</label>
   <p class="hint">Se muestran tocando el ojo junto a “Por cobrar”. Se vuelven a ocultar cuando sales de la app.</p>
   <label for="atm">Apariencia en este equipo</label><select id="atm"><option value="">Automática (según el sistema)</option><option value="light"${tema==='light'?' selected':''}>Clara</option><option value="dark"${tema==='dark'?' selected':''}>Oscura</option></select>
@@ -1044,6 +1045,7 @@ function planAvisos(){
  }
  return out.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id.localeCompare(b.id));
 }
+let pedidoNuevo='';try{pedidoNuevo=new URLSearchParams(location.search).get('nuevo')||''}catch(e){}
 let tmAvisos=0,ultPlan=null;try{ultPlan=localStorage.getItem('cp-avisos-plan')}catch(e){}
 function revisarAvisos(){
  if(!db||S.modo!=='nube'||tmAvisos)return;
@@ -1185,6 +1187,8 @@ let raf=0;function render(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;p
 function pintar(){
  if(/^#t-/.test(location.hash)){const id=location.hash.slice(3);if(S.trabajos.some(x=>x.id===id)){history.replaceState(null,'','#trabajos');setTimeout(()=>verT(id),0)}}
  revisarAvisos();
+ if(pedidoNuevo&&S.modo==='nube'){const k=pedidoNuevo;pedidoNuevo='';try{const u=new URL(location.href);u.searchParams.delete('nuevo');history.replaceState(null,'',u.pathname+u.search+u.hash)}catch(e){}
+  setTimeout(()=>{if(k==='gasto')A.gastoRapido();else if(k==='pago')A.pagoRapido();else if(k==='trabajo')A.nuevoT();else if(k==='buscar')buscar()},200)}
  const ae=document.activeElement,aid=ae&&ae.id,sel=ae&&ae.selectionStart;
  const v=vista();
  document.querySelectorAll('[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===v));

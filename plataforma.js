@@ -630,6 +630,65 @@
     if (d.tipo === 'abrir' && typeof d.url === 'string') { const i = d.url.indexOf('#'); if (i >= 0) location.hash = d.url.slice(i); }
   });
 
+  /* ---------- Atajos del iPhone y Siri ---------- */
+  const URL_ATAJO = CFG.url + '/functions/v1/atajo';
+  const huellaDe = async t => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)))].map(x => x.toString(16).padStart(2, '0')).join('');
+  const nuevaClave = () => 'cp_' + btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const copiarTxt = async (t, ok) => { try { await navigator.clipboard.writeText(t); aviso(ok, true); } catch (e) { aviso('No se pudo copiar. Mantén presionado el texto para copiarlo.'); } };
+  const PASOS = `<ol class="atp">
+    <li><b>Atajo “Gasto”</b> (dile a Siri “Gasto”). En la app Atajos toca <b>+</b> y agrega estas acciones:
+      <ul><li><b>Solicitar entrada</b> · tipo Número · “¿Cuánto?”</li>
+      <li><b>Solicitar entrada</b> · tipo Texto · “¿En qué?”</li>
+      <li><b>Obtener contenido de URL</b> · URL <code>${URL_ATAJO}</code> · Método <b>POST</b> · Encabezados: <code>x-clave</code> = tu clave · Cuerpo <b>JSON</b>: <code>accion</code> = gasto, <code>monto</code> = Entrada 1, <code>detalle</code> = Entrada 2</li>
+      <li><b>Mostrar resultado</b> (Siri lo lee en voz alta)</li></ul>
+      Va al trabajo que tiene rodaje hoy; si no hay, queda como gasto general. La categoría se elige sola (taxi → Transporte, almuerzo → Viáticos…).</li>
+    <li><b>Atajo “Pago”</b>:
+      <ul><li><b>Obtener contenido de URL</b> igual que arriba, con el cuerpo <code>accion</code> = pendientes</li>
+      <li><b>Dividir texto</b> por saltos de línea → <b>Elegir de la lista</b></li>
+      <li><b>Solicitar entrada</b> · Número · “¿Cuánto pagaron?”</li>
+      <li><b>Obtener contenido de URL</b> con <code>accion</code> = pago, <code>trabajo</code> = Elemento elegido, <code>monto</code> = Entrada (y si quieres <code>metodo</code> = Yape)</li>
+      <li><b>Mostrar resultado</b></li></ul></li>
+    <li><b>Atajo “Cuánto me deben”</b>: <b>Obtener contenido de URL</b> con <code>accion</code> = resumen → <b>Mostrar resultado</b>.</li>
+  </ol><p class="rsph">Cuida tu clave como una contraseña: con ella se pueden anotar gastos y pagos en tus cuentas. Si la pierdes o cambias de iPhone, bórrala aquí y crea otra.</p>`;
+  async function pintarAtajos(el, recien, pasos) {
+    el.dataset.ok = '1';
+    const { data: claves, error } = await sb.from('atajo_claves').select('huella,nombre,creado,usado').order('creado', { ascending: false });
+    if (!el.isConnected) return;
+    if (error) { el.innerHTML = '<span>Atajos y Siri: no se pudo revisar. Revisa tu conexión.</span>'; return; }
+    el.innerHTML = `<div class="psh">
+      <span>Anota gastos y pagos con Siri o desde Atajos del iPhone, sin abrir la app.</span>
+      ${recien ? `<div class="atk"><span>Tu clave (solo se muestra esta vez):</span><input readonly value="${esc(recien)}" aria-label="Clave para Atajos"><div class="rspb"><button type="button" class="btn sm pri" data-k="copiar">Copiar clave</button><button type="button" class="btn sm" data-k="url">Copiar dirección</button></div></div>` : ''}
+      ${claves.length ? `<ul class="rspl">${claves.map(c => `<li><span>Clave de ${esc(c.nombre)}<small>Creada ${esc(fFecha(c.creado))} · ${c.usado ? 'usada ' + esc(hace(c.usado)) : 'aún sin usar'}</small></span><button type="button" class="btn sm" data-k="borrar" data-h="${esc(c.huella)}">Borrar</button></li>`).join('')}</ul>` : ''}
+      <div class="rspb">${claves.length < 5 ? `<button type="button" class="btn sm${claves.length ? '' : ' pri'}" data-k="crear">${claves.length ? 'Crear otra clave' : 'Crear clave para Atajos'}</button>` : ''}<button type="button" class="btn sm" data-k="pasos">${pasos ? 'Ocultar instrucciones' : 'Cómo armar los atajos'}</button></div>
+      ${pasos ? PASOS : ''}</div>`;
+    el.onclick = async ev => {
+      const b = ev.target.closest('[data-k]'); if (!b) return;
+      const k = b.dataset.k;
+      if (k === 'pasos') return pintarAtajos(el, recien, !pasos);
+      if (k === 'copiar') return copiarTxt(recien, 'Clave copiada. Pégala en el encabezado x-clave del atajo.');
+      if (k === 'url') return copiarTxt(URL_ATAJO, 'Dirección copiada.');
+      if (k === 'borrar' && !b.dataset.seguro) {
+        b.dataset.seguro = '1'; b.textContent = 'Toca otra vez para borrar';
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.seguro; b.textContent = 'Borrar'; } }, 5000);
+        return;
+      }
+      b.disabled = true;
+      try {
+        if (k === 'crear') {
+          const c = nuevaClave();
+          const { error: e } = await sb.from('atajo_claves').insert({ huella: await huellaDe(c), nombre: esIOS ? 'iPhone' : 'Atajos' });
+          if (e) throw e;
+          return pintarAtajos(el, c, true);
+        }
+        if (k === 'borrar') { const { error: e } = await sb.from('atajo_claves').delete().eq('huella', b.dataset.h); if (e) throw e; aviso('Clave borrada: los atajos que la usaban dejan de funcionar.', true); return pintarAtajos(el, '', pasos); }
+      } catch (err) { b.disabled = false; aviso('No se pudo completar. Revisa tu conexión e inténtalo otra vez.'); }
+    };
+  }
+  new MutationObserver(() => {
+    const el = document.getElementById('atajobox');
+    if (el && !el.dataset.ok) pintarAtajos(el, '', false);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
   /* ---------- lo que pide la app ---------- */
   window.claude = {
     use: async nombre => {

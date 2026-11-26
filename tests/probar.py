@@ -230,6 +230,27 @@ async def avisos(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def atajos(p):
+    b, ctx, pg = await nueva(p)
+    await nuevo_trabajo(pg, titulo='Clip Atajo')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('[data-a=ajustes]'); await pg.wait_for_timeout(500)
+    await pg.click('#atajobox [data-k=crear]'); await pg.wait_for_timeout(500)
+    clave = await pg.input_value('#atajobox .atk input')
+    comprobar(clave.startswith('cp_') and len(clave) > 40, 'crea una clave y la muestra una vez')
+    st = await estado(pg)
+    import hashlib
+    comprobar(st['claves'][0]['huella'] == hashlib.sha256(clave.encode()).hexdigest() and clave not in json.dumps(st), 'guarda solo la huella, no la clave')
+    comprobar('Obtener contenido de URL' in await pg.inner_text('#atajobox'), 'muestra cómo armar los atajos')
+    await pg.locator('#atajobox').scroll_into_view_if_needed(); await pg.screenshot(path='/tmp/atajos.png')
+    await pg.click('#atajobox [data-k=borrar]'); await pg.click('#atajobox [data-k=borrar]'); await pg.wait_for_timeout(500)
+    comprobar(not (await estado(pg)).get('claves'), 'borrar con doble toque')
+    await pg.goto(URL + '?nuevo=gasto'); await pg.wait_for_timeout(1500)
+    comprobar(await pg.locator('#sheet form [name=monto]').count() == 1 and 'nuevo=' not in pg.url, '?nuevo=gasto abre el gasto rápido')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

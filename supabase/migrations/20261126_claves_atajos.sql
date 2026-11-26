@@ -1,0 +1,3 @@
+-- Atajos/Siri (aplicada el 26-11-2026 como claves_atajos): tabla public.atajo_claves (huella sha256 de la clave,
+-- usuario, nombre, creado, usado) con RLS por usuario; service_role puede insertar/actualizar documentos
+-- para que la función "atajo" anote gastos y pagos.

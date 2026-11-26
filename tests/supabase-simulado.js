@@ -6,12 +6,17 @@
  const emit=(type,row,old)=>chans.forEach(h=>setTimeout(()=>h({eventType:type,new:row||{},old:old||{}}),30));
  function q(tabla){const f={eq:[],range:null,op:'select',payload:null};const api={
   select(){return api},order(){return api},limit(){return api},eq(k,v){f.eq.push([k,v]);return api},range(a,b){f.range=[a,b];return api},
-  upsert(p){f.op='upsert';f.payload=p;return api},delete(){f.op='delete';return api},
+  upsert(p){f.op='upsert';f.payload=p;return api},insert(p){f.op='insert';f.payload=p;return api},delete(){f.op='delete';return api},
   maybeSingle(){f.single=true;return api},
   then(res,rej){window.__sbLog.push([f.op,JSON.stringify(f.eq),f.payload&&f.payload.coleccion+'/'+f.payload.id]);
    if(!navigator.onLine){return Promise.resolve({data:null,error:{message:'TypeError: Failed to fetch'}}).then(res,rej)}
    if(window.__sbFail){return Promise.resolve({data:null,error:{message:'network down'}}).then(res,rej)}
    const m=r=>f.eq.every(([k,v])=>r[k]===v);let out;
+   if(tabla==='atajo_claves'){st.claves=st.claves||[];const m3=r=>f.eq.every(([k,v])=>r[k]===v);let o={data:null,error:null};
+    if(f.op==='insert')st.claves.push({nombre:'iPhone',...f.payload,creado:new Date().toISOString(),usado:null});
+    else if(f.op==='delete')st.claves=st.claves.filter(r=>!m3(r));
+    else o={data:st.claves.filter(m3).slice().reverse(),error:null};
+    save();return Promise.resolve(o).then(res,rej)}
    if(tabla==='push_subs'){st.push=st.push||[];const m2=r=>f.eq.every(([k,v])=>r[k]===v);let o={data:null,error:null};
     if(f.op==='upsert'){st.push=st.push.filter(r=>r.endpoint!==f.payload.endpoint);st.push.push(f.payload)}
     else if(f.op==='delete'){st.push=st.push.filter(r=>!m2(r))}
