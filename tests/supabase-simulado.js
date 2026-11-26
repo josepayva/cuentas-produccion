@@ -20,6 +20,9 @@
  window.supabase={createClient:()=>({
   auth:{getSession:async()=>(!navigator.onLine&&localStorage.getItem('test-expirado')?{data:{session:null},error:{message:'TypeError: Failed to fetch'}}:{data:{session:st.session}}),refreshSession:async()=>({data:{},error:null}),
    signUp:async({email,password})=>{if(st.users&&st.users[email])return{data:{},error:{message:'User already registered'}};st.users=st.users||{};st.users[email]=password;st.session={user:{id:'u-1',email}};save();return{data:{session:st.session},error:null}},signInWithPassword:async({email,password})=>{if(!st.users||st.users[email]!==password)return{data:{},error:{message:'Invalid login credentials'}};st.session={user:{id:'u-1',email}};save();return{data:{session:st.session},error:null}},
+   resetPasswordForEmail:async(email,o)=>{window.__reset={email,o};if(!navigator.onLine)return{data:{},error:{message:'Failed to fetch'}};return{data:{},error:null}},
+   setSession:async({access_token,refresh_token})=>{if(access_token!=='rec-ok')return{data:{session:null},error:{message:'Invalid JWT'}};st.session={user:{id:'u-1',email:'a@b.com'},access_token,refresh_token};save();return{data:{session:st.session},error:null}},
+   updateUser:async({password})=>{if(!st.session)return{data:{},error:{message:'Auth session missing!'}};st.users=st.users||{};if(st.users[st.session.user.email]===password)return{data:{},error:{message:'New password should be different from the old password.'}};st.users[st.session.user.email]=password;save();return{data:{user:st.session.user},error:null}},
    verifyOtp:async({email,token})=>{if(token!=='123456')return{data:{},error:{message:'Token has expired or is invalid'}};st.session={user:{id:'u-1',email}};save();return{data:{session:st.session},error:null}},
    onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}),
    signOut:async()=>{st.session=null;save()}},

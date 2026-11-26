@@ -155,7 +155,7 @@ const fueraDeCal=()=>mcpNs?S.trabajos.filter(t=>t.cal&&(t.cal.ev||t.cal.evE)&&t.
 let moviendo=false;
 async function moverTodos(){if(moviendo)return;const l=fueraDeCal();if(!l.length){toast('Todos tus trabajos ya están en '+(S.aj.calNom||'tu calendario principal')+'.');return}moviendo=true;render();toast(`Moviendo ${l.length} ${l.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);for(const t of l){await syncCal(t.id);await espera(400)}moviendo=false;render();const q=fueraDeCal().length;toast(q?'Algunos trabajos no se pudieron mover. Revisa tu conexión y vuelve a intentarlo.':'Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')}
 let calAvisoRed=0;
-window.CP_reintentarCal=()=>{calAvisoRed=0;if(!mcpNs)return;S.trabajos.filter(t=>t.cal&&t.cal.err&&(t.cal.on||t.cal.ev||t.cal.evE)).forEach(t=>syncCal(t.id))};
+window.CP_reintentarCal=()=>{calAvisoRed=0;if(!mcpNs)return;borrarCalPendientes();S.trabajos.filter(t=>t.cal&&t.cal.err&&(t.cal.on||t.cal.ev||t.cal.evE)).forEach(t=>syncCal(t.id))};
 async function syncCal(id){
  const t0=S.trabajos.find(x=>x.id===id);if(!t0||!mcpNs||enCurso[id])return;
  if(!(t0.cal&&(t0.cal.on||t0.cal.ev||t0.cal.evE||Object.keys(t0.cal.evx||{}).length)))return;
@@ -188,7 +188,21 @@ async function syncCal(id){
  delete enCurso[id];
  await mutT(id,n=>{n.cal=cal});
 }
-function quitarDeCal(t){if(!mcpNs||!t.cal)return;const notif=t.cal.notif===false?'NONE':'ALL',cid=t.cal.cid||'';[[t.cal.ev,notif],[t.cal.evE,'NONE'],...Object.values(t.cal.evx||{}).filter(v=>v&&v!=='?').map(v=>[v,notif])].forEach(([ev,nl])=>{if(ev)mcpNs.callTool(CAL,'delete_event',cid?{eventId:ev,notificationLevel:nl,calendarId:cid}:{eventId:ev,notificationLevel:nl},{cache:false}).catch(e=>toast(calMsg(e)))})}
+// Eventos por borrar del calendario: si no hay señal al eliminar un trabajo, se guardan y se borran al volver la conexión.
+const BORRAR_CAL='cp-cal-borrar';
+const leerBorrarCal=()=>{try{return JSON.parse(localStorage.getItem(BORRAR_CAL)||'[]')}catch(e){return[]}};
+const guardarBorrarCal=l=>{try{l.length?localStorage.setItem(BORRAR_CAL,JSON.stringify(l)):localStorage.removeItem(BORRAR_CAL)}catch(e){}};
+function borrarEvCal(x){
+ const inp=x.cid?{eventId:x.ev,notificationLevel:x.nl,calendarId:x.cid}:{eventId:x.ev,notificationLevel:x.nl};
+ const quitar=()=>guardarBorrarCal(leerBorrarCal().filter(y=>y.ev!==x.ev));
+ if(!mcpNs||!navigator.onLine){if(!leerBorrarCal().some(y=>y.ev===x.ev))guardarBorrarCal([...leerBorrarCal(),x]);return Promise.resolve()}
+ return mcpNs.callTool(CAL,'delete_event',inp,{cache:false}).then(quitar,e=>{
+  if(e&&(e.code==='tool_error'||e.code==='server_not_connected')){quitar();return}
+  if(!leerBorrarCal().some(y=>y.ev===x.ev))guardarBorrarCal([...leerBorrarCal(),x]);
+  if(navigator.onLine&&!(e&&e.code==='network'))toast(calMsg(e))});
+}
+function borrarCalPendientes(){leerBorrarCal().forEach(borrarEvCal)}
+function quitarDeCal(t){if(!t.cal)return;const notif=t.cal.notif===false?'NONE':'ALL',cid=t.cal.cid||'';[[t.cal.ev,notif],[t.cal.evE,'NONE'],...Object.values(t.cal.evx||{}).filter(v=>v&&v!=='?').map(v=>[v,notif])].forEach(([ev,nl])=>{if(ev&&ev!=='?')borrarEvCal({ev,nl,cid})})}
 
 /* ---------- WhatsApp y textos ---------- */
 const waNum=s=>{const d=String(s||'').replace(/\D/g,'');if(!d)return'';return d.length===9&&d[0]==='9'?'51'+d:d};
@@ -1114,7 +1128,7 @@ aplicaTema();new MutationObserver(aplicaTema).observe(document.documentElement,{
 /* ---------- inicio ---------- */
 async function init(){
  render();
- if(window.claude&&typeof window.claude.use==='function'){window.claude.use('mcp').then(m=>{mcpNs=m||null;render()},()=>{})}
+ if(window.claude&&typeof window.claude.use==='function'){window.claude.use('mcp').then(m=>{mcpNs=m||null;render();if(mcpNs&&navigator.onLine)setTimeout(borrarCalPendientes,1500)},()=>{})}
  try{if(window.claude&&typeof window.claude.use==='function')db=await window.claude.use('db')}catch(e){db=null}
  if(!db){S.modo='local';cargarLocal();S.aviso='No se pudo conectar con tu base de datos: lo que registres ahora queda solo en este equipo. Revisa tu conexión y vuelve a abrir la app.';render();return}
  const listo={clientes:false,artistas:false,gastosGen:false,trabajos:false,aj:false};

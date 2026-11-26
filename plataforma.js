@@ -10,16 +10,36 @@
     key: 'sb_publishable_XEp-jcHM6xnIuqDo12doHA_28ZFUHY0'
   };
   const sb = window.supabase.createClient(CFG.url, CFG.key, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'cp-auth' }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'cp-auth', flowType: 'implicit' }
   });
 
   const CP = (window.CP = { sb, cuenta: null, version: '1' });
+
+  // Vuelta desde el correo de "olvidé mi contraseña" (#access_token=…&type=recovery) o enlace vencido (#error=…)
+  const RECUPERA = (() => {
+    const h = new URLSearchParams(location.hash.slice(1));
+    let r = null;
+    if (h.get('type') === 'recovery' && h.get('access_token') && h.get('refresh_token')) r = { at: h.get('access_token'), rt: h.get('refresh_token') };
+    else if (h.get('error_code') || (h.get('error') && h.get('error_description'))) r = { error: h.get('error_code') || h.get('error') };
+    if (r) try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    return r;
+  })();
 
   /* ---------- inicio de sesión ---------- */
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const LOGO = '<svg width="64" height="64" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="#36454F"/><path d="M26 13.5a9 9 0 1 0 0 13" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><circle cx="28.5" cy="27" r="2.4" fill="#FE004E"/></svg>';
 
-  function pantallaLogin() {
+  const CLAVE_ERR = m =>
+    /invalid login|invalid credentials/i.test(m) ? 'El correo o la contraseña no son correctos.'
+    : /not confirmed/i.test(m) ? 'Tu correo aún no está confirmado. Desactiva “Confirm email” en Supabase y vuelve a intentarlo.'
+    : /same.*password|different from the old/i.test(m) ? 'La nueva contraseña debe ser distinta de la anterior.'
+    : /weak|pwned|leaked|at least/i.test(m) ? 'Esa contraseña es muy fácil de adivinar. Usa otra de al menos 8 caracteres.'
+    : /rate|too many|security purposes/i.test(m) ? 'Demasiados intentos. Espera unos minutos y vuelve a intentarlo.'
+    : /expired|invalid.*(token|jwt)|session/i.test(m) ? 'El enlace venció. Pide otro con “¿Olvidaste tu contraseña?”.'
+    : 'No se pudo completar. Revisa tu conexión e inténtalo otra vez.';
+
+  // modo: 'entrar' | 'olvido' | 'nueva' (poner contraseña nueva tras abrir el enlace del correo)
+  function pantallaLogin(modoInicial, msgInicial) {
     return new Promise(resolve => {
       const el = document.createElement('div');
       el.id = 'login';
@@ -29,52 +49,80 @@
       document.body.appendChild(el);
       let correo = '';
       try { correo = localStorage.getItem('cp-correo') || ''; } catch (e) {}
-      const pinta = (modo, msg) => {
-        const nueva = modo === 'crear';
-        el.innerHTML = `<form class="lgc" id="lgf" novalidate>${LOGO}<h1 id="lgt">${nueva ? 'Crea tu cuenta' : 'Cuentas'}</h1>
-          <p>${nueva ? 'Solo la primera vez. Usa una contraseña de al menos 8 caracteres; el iPhone y la Mac te ofrecerán guardarla.' : 'Entra con tu correo y tu contraseña.'}</p>
-          <label for="lge">Correo</label>
-          <input id="lge" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" required value="${esc(correo)}">
-          <label for="lgp">Contraseña</label>
-          <input id="lgp" name="password" type="password" autocomplete="${nueva ? 'new-password' : 'current-password'}" minlength="8" required>
-          ${nueva ? `<label for="lgp2">Repite la contraseña</label><input id="lgp2" type="password" autocomplete="new-password" minlength="8" required>` : ''}
-          <button class="btn pri" type="submit">${nueva ? 'Crear cuenta y entrar' : 'Entrar'}</button>
-          <p class="lgerr" role="alert">${esc(msg || '')}</p>
-          <div class="lgacts lgc1"><button type="button" class="lnk" id="lgm">${nueva ? 'Ya tengo cuenta: entrar' : 'Primera vez: crear mi cuenta'}</button></div></form>`;
+      const pinta = (modo, msg, ok) => {
+        const campoCorreo = `<label for="lge">Correo</label>
+          <input id="lge" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" required value="${esc(correo)}">`;
+        const cuerpo = modo === 'nueva'
+          ? `<h1 id="lgt">Nueva contraseña</h1><p>Escribe tu nueva contraseña (mínimo 8 caracteres). El iPhone y la Mac te ofrecerán guardarla.</p>
+             <input type="email" autocomplete="username" value="${esc(correo)}" hidden aria-hidden="true" tabindex="-1">
+             <label for="lgp">Nueva contraseña</label><input id="lgp" type="password" autocomplete="new-password" minlength="8" required>
+             <label for="lgp2">Repite la contraseña</label><input id="lgp2" type="password" autocomplete="new-password" minlength="8" required>
+             <button class="btn pri" type="submit">Guardar y entrar</button>`
+          : modo === 'olvido'
+          ? `<h1 id="lgt">¿Olvidaste tu contraseña?</h1><p>Te enviamos un correo con un enlace para poner una nueva. Llega de Supabase y está en inglés: toca <b>Reset Password</b>.</p>
+             ${campoCorreo}<button class="btn pri" type="submit">Enviarme el enlace</button>`
+          : `<h1 id="lgt">Cuentas</h1><p>Entra con tu correo y tu contraseña.</p>
+             ${campoCorreo}
+             <label for="lgp">Contraseña</label><input id="lgp" name="password" type="password" autocomplete="current-password" minlength="8" required>
+             <button class="btn pri" type="submit">Entrar</button>`;
+        const enlace = modo === 'entrar' ? '¿Olvidaste tu contraseña?' : modo === 'olvido' ? 'Volver a entrar' : '';
+        el.innerHTML = `<form class="lgc" id="lgf" novalidate>${LOGO}${cuerpo}
+          <p class="lgerr${ok ? ' lgok' : ''}" role="alert">${esc(msg || '')}</p>
+          ${enlace ? `<div class="lgacts lgc1"><button type="button" class="lnk" id="lgm">${enlace}</button></div>` : ''}</form>`;
         const f = el.querySelector('#lgf'), ie = el.querySelector('#lge'), ip = el.querySelector('#lgp'), b = f.querySelector('button[type=submit]'), er = f.querySelector('.lgerr');
-        setTimeout(() => (ie.value ? ip : ie).focus(), 50);
-        el.querySelector('#lgm').addEventListener('click', () => { correo = ie.value.trim(); pinta(nueva ? 'entrar' : 'crear'); });
+        setTimeout(() => ((ie && !ie.value) || !ip ? ie : ip).focus(), 50);
+        const lm = el.querySelector('#lgm');
+        if (lm) lm.addEventListener('click', () => { if (ie) correo = ie.value.trim(); pinta(modo === 'entrar' ? 'olvido' : 'entrar'); });
+        const ocupado = (si, txt) => { b.disabled = si; if (txt) b.textContent = txt; };
         f.addEventListener('submit', async e => {
           e.preventDefault();
-          const v = ie.value.trim().toLowerCase(), pw = ip.value;
-          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { er.textContent = 'Revisa el correo: parece incompleto.'; return; }
-          if (pw.length < 8) { er.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
-          if (nueva && pw !== el.querySelector('#lgp2').value) { er.textContent = 'Las dos contraseñas no coinciden.'; return; }
-          const txt = b.textContent; b.disabled = true; b.textContent = nueva ? 'Creando…' : 'Entrando…'; er.textContent = '';
-          correo = v; try { localStorage.setItem('cp-correo', v); } catch (e2) {}
-          const r = nueva ? await sb.auth.signUp({ email: v, password: pw }) : await sb.auth.signInWithPassword({ email: v, password: pw });
-          const m = (r.error && r.error.message) || '';
-          if (r.error || !r.data.session) {
-            b.disabled = false; b.textContent = txt;
-            if (nueva && !r.error && !r.data.session) er.textContent = 'La cuenta se creó, pero Supabase pide confirmarla por correo. Desactiva “Confirm email” en Supabase (Authentication → Sign In / Providers → Email) y vuelve a entrar.';
-            else if (/invalid login|invalid credentials/i.test(m)) er.textContent = 'El correo o la contraseña no son correctos.';
-            else if (/not confirmed/i.test(m)) er.textContent = 'Tu correo aún no está confirmado. Desactiva “Confirm email” en Supabase y vuelve a intentarlo.';
-            else if (/already registered|already exists/i.test(m)) er.textContent = 'Ese correo ya tiene cuenta. Toca “Ya tengo cuenta: entrar”.';
-            else if (/signups? not allowed|disabled/i.test(m)) er.textContent = 'No se pueden crear cuentas nuevas en esta app.';
-            else if (/weak|pwned|leaked/i.test(m)) er.textContent = 'Esa contraseña es muy fácil de adivinar o apareció en filtraciones. Usa otra.';
-            else if (/rate|too many/i.test(m)) er.textContent = 'Demasiados intentos. Espera un minuto y vuelve a intentarlo.';
-            else er.textContent = 'No se pudo entrar. Revisa tu conexión e inténtalo otra vez.';
+          er.classList.remove('lgok');
+          const v = ie ? ie.value.trim().toLowerCase() : correo, pw = ip ? ip.value : '';
+          if (ie && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { er.textContent = 'Revisa el correo: parece incompleto.'; return; }
+          if (ip && pw.length < 8) { er.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+          if (modo === 'nueva' && pw !== el.querySelector('#lgp2').value) { er.textContent = 'Las dos contraseñas no coinciden.'; return; }
+          const txt = b.textContent; er.textContent = '';
+          if (ie) { correo = v; try { localStorage.setItem('cp-correo', v); } catch (e2) {} }
+          if (modo === 'olvido') {
+            ocupado(true, 'Enviando…');
+            const { error } = await sb.auth.resetPasswordForEmail(v, { redirectTo: location.origin + location.pathname });
+            ocupado(false, txt);
+            if (error) { er.textContent = CLAVE_ERR(error.message || ''); return; }
+            pinta('entrar', 'Listo: revisa tu correo (y la carpeta de spam). Abre el enlace en este mismo equipo; vence en 1 hora.', true);
             return;
           }
+          if (modo === 'nueva') {
+            ocupado(true, 'Guardando…');
+            const { data, error } = await sb.auth.updateUser({ password: pw });
+            if (error) { ocupado(false, txt); er.textContent = CLAVE_ERR(error.message || ''); return; }
+            const { data: ses } = await sb.auth.getSession();
+            el.remove();
+            resolve(ses.session || { user: data.user });
+            return;
+          }
+          ocupado(true, 'Entrando…');
+          const r = await sb.auth.signInWithPassword({ email: v, password: pw });
+          if (r.error || !r.data.session) { ocupado(false, txt); er.textContent = CLAVE_ERR((r.error && r.error.message) || ''); return; }
           el.remove();
           resolve(r.data.session);
         });
       };
-      pinta('entrar');
+      pinta(modoInicial || 'entrar', msgInicial);
     });
   }
 
+  async function sesionDeRecuperacion() {
+    if (!RECUPERA) return null;
+    if (RECUPERA.error) return pantallaLogin('olvido', 'El enlace ya se usó o venció. Pide uno nuevo aquí.');
+    const { data, error } = await sb.auth.setSession({ access_token: RECUPERA.at, refresh_token: RECUPERA.rt });
+    if (error || !data.session) return pantallaLogin('olvido', 'El enlace ya se usó o venció. Pide uno nuevo aquí.');
+    try { if (data.session.user && data.session.user.email) localStorage.setItem('cp-correo', data.session.user.email); } catch (e) {}
+    return pantallaLogin('nueva');
+  }
+
   const sesionLista = (async () => {
+    const rec = await sesionDeRecuperacion();
+    if (rec) { CP.cuenta = rec.user; return rec; }
     const { data, error } = await sb.auth.getSession();
     let s = data.session;
     if (!s && error) {

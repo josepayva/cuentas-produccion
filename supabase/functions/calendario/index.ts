@@ -1,5 +1,6 @@
 // Edge Function "calendario": conecta Google Calendar a la cuenta del usuario y hace las llamadas al calendario.
-// La app nunca ve el token de Google: se guarda en public.google_tokens y solo esta función lo usa.
+// La app nunca ve el token de Google: el permiso permanente se guarda cifrado en Supabase Vault
+// (funciones guardar/leer_refresh_google) y solo esta función lo usa.
 // Acciones (POST JSON { accion, ... }):
 //   estado       (con sesión)  -> { conectado, correo }
 //   iniciar      (con sesión)  -> { url }  dirección de Google para dar permiso
@@ -9,7 +10,7 @@
 //                tool: create_event | update_event | delete_event | list_calendars
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const ORIGENES = ['https://josepayva.github.io', 'http://localhost:8765'];
+const ORIGENES = ['https://josepayva.github.io'];
 const REDIRECT = 'https://josepayva.github.io/cuentas-produccion/';
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
@@ -19,7 +20,8 @@ const API = 'https://www.googleapis.com/calendar/v3';
 
 const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const secretas = (() => { try { return JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}'); } catch { return {}; } })();
-const CLAVE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || secretas['default'];
+// Clave secreta nueva (sb_secret_…); la service_role antigua solo como respaldo.
+const CLAVE = secretas['default'] || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const admin = createClient(URL_SB, CLAVE, { auth: { persistSession: false, autoRefreshToken: false } });
 
 const cors = (req: Request) => {
@@ -48,20 +50,28 @@ function credenciales() {
   return { id, secreto };
 }
 
+async function leerRefresh(uid: string): Promise<string> {
+  const { data, error } = await admin.rpc('leer_refresh_google', { p_usuario: uid });
+  if (error) console.error('No se pudo leer el permiso de Google:', error.message);
+  return (data as string) || '';
+}
+
 async function token(uid: string): Promise<string> {
   const { data: fila } = await admin.from('google_tokens').select('*').eq('usuario', uid).maybeSingle();
   if (!fila) throw Object.assign(new Error('Google Calendar no está conectado.'), { code: 'server_not_connected' });
   if (fila.access_token && fila.expira && new Date(fila.expira).getTime() - Date.now() > 60_000) return fila.access_token;
   const { id, secreto } = credenciales();
+  const refresh = await leerRefresh(uid);
+  if (!refresh) throw Object.assign(new Error('Google Calendar no está conectado.'), { code: 'needs_reauth' });
   const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: id, client_secret: secreto, refresh_token: fila.refresh_token, grant_type: 'refresh_token' }),
+    body: new URLSearchParams({ client_id: id, client_secret: secreto, refresh_token: refresh, grant_type: 'refresh_token' }),
   });
   const d = await r.json();
   if (!r.ok) {
     if (d.error === 'invalid_grant') {
-      await admin.from('google_tokens').delete().eq('usuario', uid);
+      await admin.rpc('borrar_google', { p_usuario: uid });
       throw Object.assign(new Error('El permiso de Google venció o se quitó.'), { code: 'needs_reauth' });
     }
     throw Object.assign(new Error('Google no respondió al renovar el permiso.'), { code: 'error' });
@@ -169,8 +179,7 @@ Deno.serve(async (req) => {
           : 'Google no aceptó la conexión (' + (d.error || 'error') + '). Inténtalo otra vez.';
         return fallo(req, 'error', motivo);
       }
-      const { data: previo } = await admin.from('google_tokens').select('refresh_token').eq('usuario', est.usuario).maybeSingle();
-      const refresh = d.refresh_token || (previo && previo.refresh_token);
+      const refresh = d.refresh_token || (await leerRefresh(est.usuario));
       if (!refresh) return fallo(req, 'error', 'Google no entregó un permiso permanente. Quita el acceso de “Cuentas” en tu cuenta de Google y vuelve a conectar.');
       // correo de la cuenta de Google (el id del calendario principal es el correo)
       let correo = '';
@@ -178,10 +187,11 @@ Deno.serve(async (req) => {
         const c = await fetch(API + '/users/me/calendarList/primary', { headers: { Authorization: 'Bearer ' + d.access_token } });
         if (c.ok) correo = (await c.json()).id || '';
       } catch { /* sin correo */ }
-      const { error: eTok } = await admin.from('google_tokens').upsert({
-        usuario: est.usuario, refresh_token: refresh, access_token: d.access_token,
+      const { error: eVault } = await admin.rpc('guardar_refresh_google', { p_usuario: est.usuario, p_refresh: refresh });
+      const { error: eTok } = eVault ? { error: eVault } : await admin.from('google_tokens').update({
+        access_token: d.access_token,
         expira: new Date(Date.now() + (d.expires_in || 3600) * 1000).toISOString(), correo, actualizado: new Date().toISOString(),
-      });
+      }).eq('usuario', est.usuario);
       if (eTok) { console.error('No se pudo guardar el permiso de Google:', eTok.message); return fallo(req, 'error', 'Google aceptó, pero no se pudo guardar el permiso. Avísale a Claude.'); }
       return json(req, { ok: true, correo });
     }
@@ -208,11 +218,9 @@ Deno.serve(async (req) => {
       return json(req, { url: 'https://accounts.google.com/o/oauth2/v2/auth?' + p.toString() });
     }
     if (b.accion === 'desconectar') {
-      const { data } = await admin.from('google_tokens').select('refresh_token').eq('usuario', u.id).maybeSingle();
-      if (data) {
-        await fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(data.refresh_token), { method: 'POST' }).catch(() => {});
-        await admin.from('google_tokens').delete().eq('usuario', u.id);
-      }
+      const refresh = await leerRefresh(u.id);
+      if (refresh) await fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(refresh), { method: 'POST' }).catch(() => {});
+      await admin.rpc('borrar_google', { p_usuario: u.id });
       return json(req, { ok: true });
     }
     if (b.accion === 'llamar') {

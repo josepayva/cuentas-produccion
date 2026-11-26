@@ -21,7 +21,8 @@ async def servir(route):
         return await route.fulfill(path=str(p))
     await route.fulfill(status=404, body='')
 
-async def nueva(p, **kw):
+async def nueva(p, entrar=True, **kw):
+    hash_ = kw.pop('hash', '')
     b = await p.chromium.launch()
     ctx = await b.new_context(viewport=kw.pop('viewport', {'width': 390, 'height': 844}), device_scale_factor=2, color_scheme='dark', accept_downloads=True, **kw)
     await ctx.route('http://localhost:8765/**', servir)
@@ -29,10 +30,13 @@ async def nueva(p, **kw):
     pg.errores = []
     pg.on('pageerror', lambda e: pg.errores.append(str(e)))
     await pg.goto(URL)
-    await pg.evaluate("localStorage.clear();localStorage.setItem('cp-rec-copia',new Date().toISOString().slice(0,10))")
-    await pg.goto(URL)
+    await pg.evaluate("""localStorage.clear();localStorage.setItem('cp-rec-copia',new Date().toISOString().slice(0,10));
+      localStorage.setItem('fake-sb',JSON.stringify({rows:[],session:null,users:{'a@b.com':'clave1234'}}))""")
+    await pg.goto(URL + ('?t=1' + hash_ if hash_ else ''))
     await pg.wait_for_timeout(400)
-    await pg.click('#lgm'); await pg.fill('#lge', 'a@b.com'); await pg.fill('#lgp', 'clave1234'); await pg.fill('#lgp2', 'clave1234')
+    if not entrar:
+        return b, ctx, pg
+    await pg.fill('#lge', 'a@b.com'); await pg.fill('#lgp', 'clave1234')
     await pg.click('#lgf button[type=submit]'); await pg.wait_for_timeout(700)
     return b, ctx, pg
 
@@ -82,6 +86,64 @@ async def sin_conexion(p):
     t = servidor(await estado(pg), 'trabajos')[0]
     comprobar([x['monto'] for x in t.get('pagos', [])] == [500], 'al volver la señal se sube el pago')
     comprobar(not pg.errores, 'sin errores de JavaScript')
+    await b.close()
+
+@prueba
+async def recuperar_clave(p):
+    b, ctx, pg = await nueva(p, entrar=False)
+    comprobar(await pg.locator('#lgm').inner_text() == '¿Olvidaste tu contraseña?', 'el inicio muestra "¿Olvidaste tu contraseña?"')
+    await pg.click('#lgm'); await pg.fill('#lge', 'A@b.com'); await pg.click('#lgf button[type=submit]'); await pg.wait_for_timeout(300)
+    r = await pg.evaluate('window.__reset')
+    comprobar(r['email'] == 'a@b.com' and r['o']['redirectTo'].endswith('/index.html'), 'pide el correo con el enlace de vuelta a la app')
+    comprobar('revisa tu correo' in await pg.inner_text('.lgerr'), 'avisa que revise el correo')
+    await b.close()
+    # abrir el enlace del correo
+    b, ctx, pg = await nueva(p, entrar=False, hash='#access_token=rec-ok&refresh_token=r1&expires_in=3600&token_type=bearer&type=recovery')
+    comprobar(await pg.inner_text('#lgt') == 'Nueva contraseña', 'el enlace abre "Nueva contraseña"')
+    comprobar('access_token' not in pg.url, 'el token se quita de la dirección')
+    await pg.fill('#lgp', 'nueva12345'); await pg.fill('#lgp2', 'otra12345'); await pg.click('#lgf button[type=submit]'); await pg.wait_for_timeout(200)
+    comprobar('no coinciden' in await pg.inner_text('.lgerr'), 'detecta contraseñas distintas')
+    await pg.fill('#lgp2', 'nueva12345'); await pg.click('#lgf button[type=submit]'); await pg.wait_for_timeout(900)
+    comprobar(await pg.locator('#login').count() == 0, 'guarda la contraseña y entra a la app')
+    st = await estado(pg)
+    comprobar(st['users']['a@b.com'] == 'nueva12345', 'la contraseña nueva queda guardada')
+    comprobar(not pg.errores, 'sin errores de JavaScript')
+    await b.close()
+    # enlace vencido
+    b, ctx, pg = await nueva(p, entrar=False, hash='#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')
+    comprobar('venció' in await pg.inner_text('.lgerr') and await pg.inner_text('#lgt') == '¿Olvidaste tu contraseña?', 'enlace vencido: pide uno nuevo')
+    await b.close()
+
+@prueba
+async def borrar_sin_senal(p):
+    b, ctx, pg = await nueva(p)
+    await pg.evaluate("localStorage.setItem('fake-cal','{\"con\":true}')")
+    await pg.reload(); await pg.wait_for_timeout(900)
+    await nuevo_trabajo(pg, titulo='Con evento')
+    await pg.wait_for_timeout(800)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    tiene = bool((t.get('cal') or {}).get('ev'))
+    if not tiene:
+        # marcar un evento a mano si la creación automática no aplica a este trabajo
+        await pg.evaluate("""()=>{const s=JSON.parse(localStorage.getItem('fake-sb'));const r=s.rows.find(r=>r.coleccion==='trabajos');r.datos.cal={on:true,ev:'ev-123'};localStorage.setItem('fake-sb',JSON.stringify(s))}""")
+        await pg.reload(); await pg.wait_for_timeout(900)
+    ev = (servidor(await estado(pg), 'trabajos')[0].get('cal') or {}).get('ev')
+    await ctx.set_offline(True); await pg.wait_for_timeout(200)
+    await pg.evaluate("window.__fnLog=[]")
+    if not await pg.locator('#sheet [data-a=borrarT]').count():
+        await pg.locator('[data-a=verT]:visible').first.click(timeout=3000)
+    await pg.wait_for_timeout(300)
+    await pg.click('#sheet [data-a=borrarT]'); await pg.wait_for_timeout(200)
+    if await pg.locator('#sheet [data-a=borrarT]').count():
+        await pg.click('#sheet [data-a=borrarT]'); await pg.wait_for_timeout(300)
+    pend = await pg.evaluate("JSON.parse(localStorage.getItem('cp-cal-borrar')||'[]')")
+    comprobar(any(x['ev'] == ev for x in pend), 'sin señal: el evento queda pendiente de borrar')
+    await ctx.set_offline(False); await pg.evaluate("window.dispatchEvent(new Event('online'))"); await pg.wait_for_timeout(2500)
+    log = await pg.evaluate("window.__fnLog")
+    borrados = [x for x in log if x.get('accion') == 'llamar' and x.get('tool') == 'delete_event']
+    comprobar(any(x['input']['eventId'] == ev for x in borrados), 'al volver la señal se borra del calendario')
+    comprobar(await pg.evaluate("localStorage.getItem('cp-cal-borrar')") is None, 'la lista de pendientes queda vacía')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
 async def main():
