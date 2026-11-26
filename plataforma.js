@@ -150,7 +150,7 @@
   const esDeSesion = e => /jwt|token.*expired|401|not authenticated/i.test(String((e && (e.message || e.code)) || ''));
 
   function crearDB(uid) {
-    const COLS = ['clientes', 'artistas', 'trabajos', 'gastosGen', 'comprobantes', 'ajustes'];
+    const COLS = ['clientes', 'artistas', 'trabajos', 'gastosGen', 'comprobantes', 'ajustes', 'sistema'];
     const maps = {};      // coleccion -> Map(id -> datos)
     const oyentes = {};   // coleccion -> [fn(fromCache)]
     let canal = null, ocultoDesde = 0;
@@ -557,6 +557,77 @@
         document.body.appendChild(el);
       }, 2500);
     } catch (e) {}
+  });
+
+  /* ---------- avisos al iPhone (Web Push) ---------- */
+  const VAPID = 'BPwZdqXtDADGmPCq5hE6cvNNbvGTm1hLRQ8jm8nE7qB02v41FEZyhEJj1sgApzPznT3ghgvMKt-lTj6wI8mP1rs';
+  const deB64 = t => { const r = atob((t + '='.repeat((4 - t.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, c => c.charCodeAt(0)); };
+  const esIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const instalada = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  const hayPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && (location.protocol === 'https:' || location.hostname === 'localhost');
+  const nombreEquipo = () => esIOS ? 'iPhone' : /Mac/.test(navigator.platform) ? 'Mac' : (navigator.platform || 'Equipo');
+  async function subActual() { const reg = await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); }
+  CP.push = {
+    async activar() {
+      const permiso = await Notification.requestPermission();
+      if (permiso !== 'granted') throw Object.assign(new Error('permiso'), { code: 'denegado' });
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: deB64(VAPID) }));
+      const j = sub.toJSON();
+      const { error } = await sb.from('push_subs').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, dispositivo: nombreEquipo() }, { onConflict: 'endpoint' });
+      if (error) throw error;
+      if (window.CP_avisosActivos) window.CP_avisosActivos(true);
+    },
+    async desactivar() {
+      const sub = await subActual();
+      if (sub) { await sb.from('push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe().catch(() => {}); }
+      const { count } = await sb.from('push_subs').select('endpoint', { count: 'exact', head: true });
+      if (!count && window.CP_avisosActivos) window.CP_avisosActivos(false);
+    },
+    async probar() {
+      const { data, error } = await sb.functions.invoke('avisos', { body: { accion: 'probar' } });
+      if (error || !data || data.error) throw new Error((data && data.error) || 'error');
+      return data;
+    }
+  };
+  async function pintarAvisos(el) {
+    el.dataset.ok = '1';
+    const caja = (txt, botones) => { el.innerHTML = `<div class="psh"><span>${txt}</span>${botones ? `<div class="rspb">${botones}</div>` : ''}</div>`; };
+    if (!hayPush()) {
+      if (esIOS && !instalada()) caja('Para recibir avisos en el iPhone, abre la app desde su ícono en la pantalla de inicio (no desde Safari) y actívalos ahí. Necesita iOS 16.4 o más nuevo.');
+      else caja('Este equipo no puede mostrar avisos (la app de la Mac no los admite). Actívalos en tu iPhone: te llegan ahí.');
+      return;
+    }
+    let sub = null;
+    try { sub = await subActual(); } catch (e) {}
+    let registrada = false;
+    if (sub) { const { data } = await sb.from('push_subs').select('endpoint').eq('endpoint', sub.endpoint).maybeSingle(); registrada = !!data; }
+    if (!el.isConnected) return;
+    if (Notification.permission === 'denied') caja('Los avisos están bloqueados para esta app. Actívalos en Ajustes del iPhone → Notificaciones → Cuentas, y vuelve aquí.');
+    else if (sub && registrada) caja('<b>Avisos activados en este equipo</b> · llegan cada día a las 8 a.m.', '<button type="button" class="btn sm" data-p="probar">Enviar aviso de prueba</button><button type="button" class="btn sm" data-p="off">Desactivar en este equipo</button>');
+    else caja('Recibe un aviso a las 8 a.m. cuando toca cobrar, cuando se vence un pago y el día antes de cada entrega y rodaje.', '<button type="button" class="btn sm pri" data-p="on">Activar avisos en este equipo</button>');
+    el.onclick = async ev => {
+      const b = ev.target.closest('[data-p]'); if (!b) return;
+      b.disabled = true;
+      try {
+        if (b.dataset.p === 'on') { await CP.push.activar(); await CP.push.probar().catch(() => {}); aviso('Listo: avisos activados. Te mandé uno de prueba.', true); }
+        else if (b.dataset.p === 'off') { await CP.push.desactivar(); aviso('Avisos desactivados en este equipo.', true); }
+        else { const r = await CP.push.probar(); aviso(r.enviados ? 'Aviso de prueba enviado: debería llegar en unos segundos.' : 'No hay equipos con avisos activados.', !!r.enviados); }
+        pintarAvisos(el);
+      } catch (err) {
+        b.disabled = false;
+        aviso(err && err.code === 'denegado' ? 'No diste permiso para los avisos. Puedes activarlo en Ajustes del iPhone → Notificaciones → Cuentas.' : 'No se pudo completar. Revisa tu conexión e inténtalo otra vez.');
+      }
+    };
+  }
+  new MutationObserver(() => {
+    const el = document.getElementById('pushbox');
+    if (el && !el.dataset.ok) pintarAvisos(el);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  // Al tocar un aviso con la app abierta, el service worker pide ir al trabajo
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+    const d = e.data || {};
+    if (d.tipo === 'abrir' && typeof d.url === 'string') { const i = d.url.indexOf('#'); if (i >= 0) location.hash = d.url.slice(i); }
   });
 
   /* ---------- lo que pide la app ---------- */

@@ -1,0 +1,5 @@
+-- Avisos al iPhone (aplicada el 26-11-2026 como avisos_push).
+-- pg_net; tabla public.push_subs (endpoint, usuario, p256dh, auth, dispositivo) con RLS por usuario;
+-- función public.config_avisos() (solo service_role) que lee de Vault: vapid_privada, vapid_publica, avisos_token;
+-- cron 'avisos-diarios' a las 13:02 UTC (8:02 a.m. Lima) que llama a la función avisos con el token.
+-- Las claves viven solo en Vault; no se guardan en el repositorio.

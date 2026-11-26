@@ -1,6 +1,6 @@
 /* Guarda la app en el equipo para que abra rápido y sin conexión.
    Siempre intenta traer la versión nueva primero; si no hay internet, usa la guardada. */
-const VERSION = 'cuentas-4fb043eec6';
+const VERSION = 'cuentas-9ebf76063b';
 const BASE = ['./', 'index.html', 'plataforma.js', 'vendor/supabase.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 
@@ -21,4 +21,23 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(r, { ignoreSearch: true }).then(m => m || (r.mode === 'navigate' ? caches.match('index.html') : undefined)))
   );
+});
+
+/* Avisos (Web Push): los manda la función "avisos" de Supabase cada mañana */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = { titulo: e.data ? e.data.text() : 'Cuentas' }; }
+  e.waitUntil(self.registration.showNotification(d.titulo || 'Cuentas', {
+    body: d.cuerpo || '', tag: d.tag || undefined, data: { url: d.url || './' },
+    icon: 'icons/icon-192.png', badge: 'icons/icon-192.png'
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const c = cs.find(x => x.url.startsWith(self.registration.scope));
+    if (c) { c.postMessage({ tipo: 'abrir', url }); return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
 });

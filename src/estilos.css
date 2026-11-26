@@ -488,3 +488,7 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .bqi:hover,.bqi:focus-visible{background:color-mix(in srgb,var(--line) 45%,transparent)}
 .bqi b{white-space:normal}
 .bqm{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* avisos */
+.avt{display:grid;gap:2px;margin:8px 0 0}
+.psh{display:grid;gap:8px}.psh .rspb{display:flex;flex-wrap:wrap;gap:8px}

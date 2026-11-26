@@ -507,6 +507,10 @@ fieldset.calf legend{font-weight:700;font-size:14px;padding:0 6px}
 .bqi:hover,.bqi:focus-visible{background:color-mix(in srgb,var(--line) 45%,transparent)}
 .bqi b{white-space:normal}
 .bqm{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* avisos */
+.avt{display:grid;gap:2px;margin:8px 0 0}
+.psh{display:grid;gap:8px}.psh .rspb{display:flex;flex-wrap:wrap;gap:8px}
 </style>
 </head>
 <body>
@@ -1479,6 +1483,11 @@ function fCliente(c){
 }
 function fAjustes(){
  abrir(cab('Ajustes')+`${window.CP&&CP.cuenta?`<div class="cuenta"><span>Entraste como <b>${esc(CP.cuenta.email||'')}</b></span><button type="button" class="btn sm" data-a="salir">Cerrar sesión</button></div><div id="gcalbox" class="cuenta"></div><div id="respbox" class="cuenta"></div>`:''}<form novalidate>
+  ${window.CP&&CP.cuenta?`<h4 style="margin-top:4px">Avisos en el iPhone</h4><div id="pushbox" class="cuenta"></div>
+  <div class="avt"><label class="chk"><input type="checkbox" name="avCobros"${(S.aj.avisos||{}).cobros!==false?' checked':''}> Cobros: el día que toca y si se vence</label>
+  <label class="chk"><input type="checkbox" name="avEntregas"${(S.aj.avisos||{}).entregas!==false?' checked':''}> Entregas: el día antes</label>
+  <label class="chk"><input type="checkbox" name="avRodajes"${(S.aj.avisos||{}).rodajes!==false?' checked':''}> Rodajes: el día antes</label></div>
+  <p class="hint">Llegan a las 8 a.m. Muestran el trabajo y el artista, nunca montos ni datos del cliente. Guarda los ajustes después de cambiar estas casillas.</p>`:''}
   <label class="chk"><input type="checkbox" id="aoc"${ocultarInicio?' checked':''}> Ocultar los montos al abrir la app en este equipo</label>
   <p class="hint">Se muestran tocando el ojo junto a “Por cobrar”. Se vuelven a ocultar cuando sales de la app.</p>
   <label for="atm">Apariencia en este equipo</label><select id="atm"><option value="">Automática (según el sistema)</option><option value="light"${tema==='light'?' selected':''}>Clara</option><option value="dark"${tema==='dark'?' selected':''}>Oscura</option></select>
@@ -1523,7 +1532,7 @@ function fAjustes(){
   s.querySelector('#atm').addEventListener('change',e=>{tema=e.target.value;try{localStorage.setItem('cp-tema',tema)}catch(x){}if(tema)aplicaTema();else delete document.documentElement.dataset.theme});
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const F=new FormData(e.target);const g=parseInt(F.get('gracia'),10);
    const calAntes=S.aj.calId||'';
-   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel});
+   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')}});
    guardarAj();cerrar();
    const enCal=S.trabajos.filter(t=>t.cal&&(t.cal.on||t.cal.ev)&&t.estadoProd!=='cancelado');
    if(mcpNs&&enCal.length&&(S.aj.calId||'')!==calAntes){toast(`Moviendo ${enCal.length} ${enCal.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);(async()=>{for(const t of enCal){await syncCal(t.id);await espera(400)}toast('Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')})()}
@@ -1555,6 +1564,31 @@ function tablaGastos(){
 }
 
 /* ---------- acciones ---------- */
+/* ---------- avisos al iPhone ---------- */
+// La app arma el plan de los próximos 45 días; Supabase manda cada mañana (8 a.m.) los del día.
+// Sin montos ni nombres de clientes: solo el trabajo y el artista.
+function planAvisos(){
+ const A=S.aj.avisos||{};if(!A.on)return[];
+ const h=hoy(),lim=sumarDias(h,45),out=[],add=(fecha,id,titulo,cuerpo,url)=>{if(fecha&&fecha>=h&&fecha<=lim)out.push({id,fecha,titulo,cuerpo,url})};
+ for(const t of S.trabajos){
+  if(t.estadoProd==='cancelado')continue;
+  const nom='«'+(t.titulo||'Trabajo')+'»'+(nomArt(t)?' · '+nomArt(t):''),url='#t-'+t.id;
+  const cs=cuenta(t)?cuotas(t):[],faltaAd=cs.some(c=>c.tipo==='adelanto'&&c.falta>0.004);
+  if(A.cobros!==false)for(const c of cs){if(c.falta<=0.004||!c.vence)continue;
+   if(c.tipo!=='entrega')add(c.vence,'v-'+t.id+'-'+c.id,c.tipo==='adelanto'?'Hoy toca cobrar el adelanto':'Hoy vence: '+c.concepto,nom,url);
+   add(sumarDias(c.vence,G()+1),'x-'+t.id+'-'+c.id,'Pago vencido: '+c.concepto,nom,url)}
+  if(A.entregas!==false&&t.estadoProd==='produccion'&&t.entrega)add(sumarDias(t.entrega,-1),'e-'+t.id,'Mañana entregas',nom+(saldo(t)>0.004?' · cobrar al entregar':''),url);
+  if(A.rodajes!==false&&t.estadoProd!=='cotizado')for(const b of bloques(t))add(sumarDias(b.fecha,-1),'r-'+t.id+'-'+b.fecha,'Mañana rodaje'+(b.horaIni?' · '+b.horaIni:''),nom+(t.lugar?' · '+t.lugar:'')+(faltaAd?' · falta el adelanto':''),url);
+ }
+ return out.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id.localeCompare(b.id));
+}
+let tmAvisos=0,ultPlan=null;try{ultPlan=localStorage.getItem('cp-avisos-plan')}catch(e){}
+function revisarAvisos(){
+ if(!db||S.modo!=='nube'||tmAvisos)return;
+ tmAvisos=setTimeout(()=>{tmAvisos=0;const plan=planAvisos(),k=JSON.stringify(plan);if(k===ultPlan)return;ultPlan=k;
+  encolar('sistema/avisos',()=>db.collection('sistema').doc('avisos').set({plan,actualizado:new Date().toISOString()})).then(()=>{try{localStorage.setItem('cp-avisos-plan',k)}catch(e){}},()=>{ultPlan=null})},2500);
+}
+window.CP_avisosActivos=on=>{const a={cobros:true,entregas:true,rodajes:true,...(S.aj.avisos||{}),on:!!on};if(!!(S.aj.avisos||{}).on===!!on)return;S.aj={...S.aj,avisos:a};guardarAj();revisarAvisos()};
 /* ---------- buscador general ---------- */
 // Busca en trabajos, clientes, artistas, pagos y gastos. Cada palabra debe aparecer (sin tildes ni mayúsculas).
 function buscarTodo(q){
@@ -1687,6 +1721,8 @@ addEventListener('hashchange',()=>{if(!ov.hidden)cerrar();scrollTo(0,0);render()
 /* ---------- pintar ---------- */
 let raf=0;function render(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;pintar()})}
 function pintar(){
+ if(/^#t-/.test(location.hash)){const id=location.hash.slice(3);if(S.trabajos.some(x=>x.id===id)){history.replaceState(null,'','#trabajos');setTimeout(()=>verT(id),0)}}
+ revisarAvisos();
  const ae=document.activeElement,aid=ae&&ae.id,sel=ae&&ae.selectionStart;
  const v=vista();
  document.querySelectorAll('[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===v));

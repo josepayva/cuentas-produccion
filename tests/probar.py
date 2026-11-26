@@ -171,6 +171,65 @@ async def buscador(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+PUSH_FALSO = """
+window.PushManager = window.PushManager || function(){};
+const subFalsa = {endpoint:'https://push.test/abc', toJSON(){return {endpoint:this.endpoint, keys:{p256dh:'pk', auth:'au'}}}, unsubscribe: async()=>{window.__subOn=false; return true}};
+Object.defineProperty(Notification, 'permission', {get(){return window.__permiso||'default'}});
+Notification.requestPermission = async()=>{window.__permiso='granted'; return 'granted'};
+const listo = Promise.resolve({pushManager:{getSubscription: async()=>window.__subOn?subFalsa:null, subscribe: async()=>{window.__subOn=true; return subFalsa}}});
+Object.defineProperty(navigator.serviceWorker, 'ready', {get(){return listo}});
+"""
+
+@prueba
+async def avisos(p):
+    b = await p.chromium.launch()
+    ctx = await b.new_context(viewport={'width': 390, 'height': 844}, color_scheme='dark')
+    await ctx.add_init_script(PUSH_FALSO)
+    await ctx.route('http://localhost:8765/**', servir)
+    pg = await ctx.new_page(); pg.errores = []; pg.on('pageerror', lambda e: pg.errores.append(str(e)))
+    await pg.goto(URL)
+    await pg.evaluate("""localStorage.clear();localStorage.setItem('cp-rec-copia',new Date().toISOString().slice(0,10));
+      localStorage.setItem('fake-sb',JSON.stringify({rows:[],session:null,users:{'a@b.com':'clave1234'}}))""")
+    await pg.goto(URL); await pg.wait_for_timeout(400)
+    await pg.fill('#lge', 'a@b.com'); await pg.fill('#lgp', 'clave1234'); await pg.click('#lgf button[type=submit]'); await pg.wait_for_timeout(700)
+    hoy = await pg.evaluate("(()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)})()")
+    import datetime
+    man = (datetime.date.fromisoformat(hoy) + datetime.timedelta(days=2)).isoformat()
+    await nuevo_trabajo(pg, titulo='Rodaje Selva', artista='Grupo Río', monto='4000', fecha=man, fa='2000')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('[data-a=ajustes]'); await pg.wait_for_timeout(500)
+    await pg.locator('#pushbox').scroll_into_view_if_needed(); await pg.screenshot(path='/tmp/avisos.png')
+    comprobar('Activar avisos' in await pg.inner_text('#pushbox'), 'Ajustes ofrece activar avisos')
+    await pg.click('#pushbox [data-p=on]'); await pg.wait_for_timeout(3500)
+    st = await estado(pg)
+    comprobar(len(st.get('push', [])) == 1 and st['push'][0]['endpoint'] == 'https://push.test/abc', 'registra este equipo en Supabase')
+    comprobar('Avisos activados' in await pg.inner_text('#pushbox'), 'muestra avisos activados')
+    plan = next((r['datos']['plan'] for r in st['rows'] if r['coleccion'] == 'sistema' and r['id'] == 'avisos'), None)
+    comprobar(plan is not None, 'guarda el plan de avisos')
+    ids = [x['id'][:2] for x in (plan or [])]
+    comprobar('r-' in ids and 'v-' in ids, 'incluye el rodaje del día antes y el cobro del adelanto: ' + str([(x['fecha'], x['titulo']) for x in plan or []]))
+    txt = json.dumps(plan, ensure_ascii=False)
+    comprobar('4000' not in txt and '4,000' not in txt, 'el aviso no muestra montos')
+    rod = next(x for x in plan if x['id'].startswith('r-'))
+    comprobar(rod['fecha'] < man and 'Rodaje Selva' in rod['cuerpo'], 'aviso del rodaje un día antes')
+    # quitar rodajes en ajustes
+    await pg.uncheck('input[name=avRodajes]'); await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(3500)
+    st = await estado(pg)
+    plan = next(r['datos']['plan'] for r in st['rows'] if r['coleccion'] == 'sistema' and r['id'] == 'avisos')
+    comprobar(not any(x['id'].startswith('r-') for x in plan), 'al quitar rodajes se dejan de avisar')
+    # abrir desde el aviso
+    await pg.evaluate("location.hash='#t-'+JSON.parse(localStorage.getItem('fake-sb')).rows.find(r=>r.coleccion==='trabajos').id"); await pg.wait_for_timeout(500)
+    comprobar('Rodaje Selva' in await pg.inner_text('#sheet'), 'tocar el aviso abre el trabajo')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('[data-a=ajustes]'); await pg.wait_for_timeout(500)
+    await pg.click('#pushbox [data-p=off]'); await pg.wait_for_timeout(2500)
+    st = await estado(pg)
+    comprobar(not st.get('push'), 'desactivar quita el equipo')
+    plan = next(r['datos']['plan'] for r in st['rows'] if r['coleccion'] == 'sistema' and r['id'] == 'avisos')
+    comprobar(plan == [], 'sin equipos, el plan queda vacío')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

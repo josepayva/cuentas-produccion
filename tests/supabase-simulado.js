@@ -12,6 +12,11 @@
    if(!navigator.onLine){return Promise.resolve({data:null,error:{message:'TypeError: Failed to fetch'}}).then(res,rej)}
    if(window.__sbFail){return Promise.resolve({data:null,error:{message:'network down'}}).then(res,rej)}
    const m=r=>f.eq.every(([k,v])=>r[k]===v);let out;
+   if(tabla==='push_subs'){st.push=st.push||[];const m2=r=>f.eq.every(([k,v])=>r[k]===v);let o={data:null,error:null};
+    if(f.op==='upsert'){st.push=st.push.filter(r=>r.endpoint!==f.payload.endpoint);st.push.push(f.payload)}
+    else if(f.op==='delete'){st.push=st.push.filter(r=>!m2(r))}
+    else{const rs=st.push.filter(m2);o={data:f.single?(rs[0]||null):rs,count:rs.length,error:null}}
+    save();return Promise.resolve(o).then(res,rej)}
    if(tabla==='respaldos'){return Promise.resolve({data:(st.resp||[]).slice().reverse().map(r=>({id:r.id,creado:r.creado,motivo:r.motivo,documentos:Object.keys(r.datos).length})),error:null}).then(res,rej)}
    if(f.op==='select'){let rs=st.rows.filter(m).map(r=>({coleccion:r.coleccion,id:r.id,datos:r.datos}));if(f.range)rs=rs.slice(f.range[0],f.range[1]+1);out={data:f.single?(rs[0]||null):rs,error:null}}
    else if(f.op==='upsert'){const p=f.payload;const i=st.rows.findIndex(r=>r.coleccion===p.coleccion&&r.id===p.id);const row={coleccion:p.coleccion,id:p.id,datos:p.datos};if(i>=0)st.rows[i]=row;else st.rows.push(row);save();emit(i>=0?'UPDATE':'INSERT',row);out={data:null,error:null}}
@@ -27,6 +32,7 @@
    onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}),
    signOut:async()=>{st.session=null;save()}},
   functions:{invoke:async(n,{body})=>{window.__fnLog=(window.__fnLog||[]);window.__fnLog.push(body);const c=JSON.parse(localStorage.getItem('fake-cal')||'{"con":false}');
+   if(n==='avisos'){const k=(st.push||[]).length;return{data:{ok:true,equipos:k,enviados:k,fallos:0},error:null}}
    if(body.accion==='estado')return{data:{conectado:c.con,correo:c.con?'jozeph9@gmail.com':'',configurado:true},error:null};
    if(body.accion==='iniciar')return{data:{url:location.origin+location.pathname+'?code=abc&state=xyz&scope=s'},error:null};
    if(body.accion==='terminar'){localStorage.setItem('fake-cal','{"con":true}');return{data:{ok:true,correo:'jozeph9@gmail.com'},error:null}}
