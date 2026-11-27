@@ -1,6 +1,6 @@
 /* Guarda la app en el equipo para que abra rápido y sin conexión.
    Siempre intenta traer la versión nueva primero; si no hay internet, usa la guardada. */
-const VERSION = 'cuentas-73ae514e9d';
+const VERSION = 'cuentas-19383f8f39';
 const BASE = ['./', 'index.html', 'plataforma.js', 'vendor/supabase.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png', 'icons/logo-emotion.png'];
 

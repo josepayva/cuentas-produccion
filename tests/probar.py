@@ -652,6 +652,26 @@ async def precio_pactado(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def duracion_video(p):
+    b, ctx, pg = await nueva(p)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=videoclip]'); await pg.wait_for_timeout(300)
+    comprobar(await pg.input_value('#srv [data-f=dur]') == '5', 'la duración del video viene en 5 min')
+    await pg.fill('#ft', 'Tema Corto'); await pg.fill('#far', 'Grupo D')
+    await pg.fill('#srv [data-f=dur]', '3.5'); await pg.wait_for_timeout(100)
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    comprobar(await pg.input_value('#ce-dur') == '3.5' and '3.5 minutos por video' in await pg.inner_text('#ce-prev'), 'la cotización usa la duración elegida: ' + await pg.inner_text('#ce-prev'))
+    await pg.fill('#ce-dur', '4'); await pg.wait_for_timeout(150)
+    comprobar('4 minutos por video' in await pg.inner_text('#ce-prev'), 'se puede cambiar en el editor de la cotización')
+    await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['cot']['duracion'] == 4 and '{duracion}' in t['cot']['intro'], 'se guarda la duración: ' + str(t['cot'].get('duracion')))
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=envivo]'); await pg.wait_for_timeout(300)
+    comprobar(await pg.locator('#srv [data-f=dur]').count() == 0, 'la sesión en vivo no pide duración')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

@@ -1130,7 +1130,7 @@ function dibujarCotPartidas(d,t,logo){
 // Basados en las cotizaciones de eMotion Studios. Se editan en Ajustes y se copian a cada trabajo al cotizar.
 const MODELOS_DEF=[
  {id:'videoclip',nombre:'Videoclip',titulo:'Cotización – Producción de video musical',etiqueta:'Cliente',precio:2500,
-  intro:'A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de 5 minutos por video, a realizarse en la ciudad de {ciudad}.',
+  intro:'A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de {duracion} por video, a realizarse en la ciudad de {ciudad}.',duracion:5,
   servicio:'Servicios principales',
   incluye:['Producción y filmación (dirección, cámara y operador)','Edición y postproducción (incluye corrección de color)','Entrega optimizada para redes'],
   equipos:['Cámara Sony FX3 Cinema Line (grabación en 4K)','Lentes de cine Nisi Athena','Drone DJI Mavic 2 Pro','Iluminación básica (2 luces LED + difusores y soportes)','Trípodes y estabilizadores','Equipo técnico (3 personas)','2 días de rodaje (recomendado)'],
@@ -1201,11 +1201,14 @@ const cotLista=t=>!!(t&&t.cot&&(t.cot.modo==='modelo'||(t.cot.modo==='paquete'&&
 // Texto de las fechas de rodaje del trabajo
 function fechasRodaje(t){const bs=bloques(t);if(!bs.length)return'';return bs.map(b=>b.hasta&&b.hasta>b.fecha?fd(b.fecha)+' al '+fd(b.hasta):fd(b.fecha)).join(' · ')}
 // Textos de la primera versión de los modelos (fijaban 1 video y 15 canciones)
-const introActual=x=>String(x||'').replace('A continuación, se detalla la cotización para la producción de 1 video musical, con una duración aproximada de 5 minutos, a realizarse en la ciudad de {ciudad}.','A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de 5 minutos por video, a realizarse en la ciudad de {ciudad}.').replace('contemplando aproximadamente 15 canciones, con posibilidad','contemplando aproximadamente {canciones}, con posibilidad');
+const durActual=x=>x.split('con una duración aproximada de 5 minutos por video').join('con una duración aproximada de {duracion} por video');
+const durTxt=c=>{const n=num(c&&c.duracion)||5;return (Math.round(n*10)/10)+' '+(n===1?'minuto':'minutos')};
+const introActual=x=>durActual(String(x||'').replace('A continuación, se detalla la cotización para la producción de 1 video musical, con una duración aproximada de 5 minutos, a realizarse en la ciudad de {ciudad}.','A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de 5 minutos por video, a realizarse en la ciudad de {ciudad}.').replace('contemplando aproximadamente 15 canciones, con posibilidad','contemplando aproximadamente {canciones}, con posibilidad'));
 // Sesión en vivo: textos de la primera versión (cámaras fijas y jornada con horas) -> versión nueva
 const TXT_VIEJO=[['Filmación multicámara con hasta 5 cámaras de alta calidad y en 4K.','Filmación multicámara con {camaras} de alta calidad y en 4K.'],['La producción contempla una jornada de aproximadamente 12 horas, incluyendo:\n• Preparación y montaje técnico.\n• Pruebas de cámara e iluminación.\n• Grabación de aproximadamente 15 canciones.\n• Descansos.\n• Ajustes técnicos necesarios durante la jornada.\n• Tomas adicionales de apoyo.\nLas 12 horas corresponden al tiempo total de jornada de producción, incluyendo descansos y tiempos de preparación. No representan 12 horas continuas de interpretación musical.\nEn caso de superar el tiempo de jornada establecido, las horas adicionales serán coordinadas y cotizadas por separado.','La producción contempla una jornada de grabación que incluye:\n• Preparación y montaje técnico.\n• Pruebas de cámara e iluminación.\n• Grabación de los temas acordados.\n• Descansos.\n• Ajustes técnicos necesarios durante la jornada.\n• Tomas adicionales de apoyo.\nLa duración de la jornada se coordinará previamente con el cliente, según la cantidad de temas y las condiciones de la locación.\nSi la grabación se extiende más allá de lo coordinado, el tiempo adicional se cotizará por separado.']].map(([a,b])=>[a.replace(/\\n/g,'\n'),b.replace(/\\n/g,'\n')]);
 const txtActual=x=>{let v=String(x||'');for(const [a,b] of TXT_VIEJO)v=v.split(a).join(b);return v};
 function textosActuales(c){if(!c)return c;const n={...c,intro:introActual(c.intro),incluye:(c.incluye||[]).map(txtActual),secciones:(c.secciones||[]).map(x=>({...x,texto:txtActual(x.texto)}))};
+ if(n.duracion==null&&(n.modelo==='videoclip'||String(n.intro||'').includes('{duracion}')))n.duracion=5;
  if(n.camaras==null&&(n.modelo==='envivo'||n.incluye.some(x=>x.includes('{camaras}'))))n.camaras=5;
  if(n.camaras!=null&&n.precioCamara==null&&n.modelo==='envivo')n.precioCamara=500;
  if(n.camaras!=null&&n.camarasIncl==null&&n.modelo==='envivo')n.camarasIncl=2;
@@ -1216,7 +1219,7 @@ function datosTemas(t,c){const n=cantDe(c,t),nom=String((t&&t.temasNom)||'').spl
  const usaNom=nom.length&&nom.length===n&&(!c||!c._partes||c._partes.findIndex(x=>cantDe(x,t)===nom.length)===c._parte);
  const lista=usaNom?' ('+nom.map(x=>'«'+x+'»').join(', ')+')':'';
  return {n,videos:(n>1?n+' videos musicales':'1 video musical')+lista,canciones:n>0?(n===1?'1 canción':n+' canciones')+lista:'las canciones acordadas',temas:n>0?String(n):''}}
-const ponerDatos=(x,t,c)=>{const d=datosTemas(t,c);return introActual(x).replace(/\{ciudad\}/g,c.ciudad||'(ciudad)').replace(/\{artista\}/g,nomArt(t)||'').replace(/\{cliente\}/g,(cli(t.clienteId)||{}).nombre||'').replace(/\{trabajo\}/g,t.titulo||'').replace(/\{videos\}/g,d.videos).replace(/\{canciones\}/g,d.canciones).replace(/\{temas\}/g,d.temas||'1').replace(/\{partes\}/g,c.partes?textoPartes(c,t):'').replace(/\{camaras\}/g,camTxt(c))};
+const ponerDatos=(x,t,c)=>{const d=datosTemas(t,c);return introActual(x).replace(/\{ciudad\}/g,c.ciudad||'(ciudad)').replace(/\{artista\}/g,nomArt(t)||'').replace(/\{cliente\}/g,(cli(t.clienteId)||{}).nombre||'').replace(/\{trabajo\}/g,t.titulo||'').replace(/\{videos\}/g,d.videos).replace(/\{canciones\}/g,d.canciones).replace(/\{temas\}/g,d.temas||'1').replace(/\{partes\}/g,c.partes?textoPartes(c,t):'').replace(/\{camaras\}/g,camTxt(c)).replace(/\{duracion\}/g,durTxt(c))};
 const camTxt=c=>{const k=parseInt(c&&c.camaras,10)||0;return k>0?(k===1?'1 cámara':k+' cámaras'):'varias cámaras'};
 
 /* ---------- precio: por tema, descuentos por cantidad y descuento especial ---------- */
@@ -1287,6 +1290,7 @@ function cotDesdeModelo(md,t,cantidad){
  const c={modo:'modelo',modelo:md.id,nombre:base.nombre,titulo:base.titulo,etiqueta:base.etiqueta||'Cliente',intro:introActual(base.intro),servicio:base.servicio,ciudad:t&&t.lugar?String(t.lugar).split(/[,–-]/)[0].trim():'',
   precioModo:base.precioModo||'fijo',precio:num(base.precio),precioBase:num(base.precioBase),unidad:base.unidad||{s:'tema',p:'temas'},escala:base.escala||{tipo:'ninguna',tramos:[]},
   cantidad:cantidad||Math.max(1,parseInt(t&&t.temas,10)||1),descuento:{tipo:'monto',valor:0,motivo:''},
+  ...(base.duracion!=null||String(base.intro||'').includes('{duracion}')?{duracion:num(base.duracion)||5}:{}),
   ...(base.camaras!=null?{camaras:parseInt(base.camaras,10)||1,precioCamara:num(base.precioCamara),camarasIncl:parseInt(base.camarasIncl,10)||0}:{}),
   incluye:base.incluye||[],equipos:base.equipos||[],
   opcionales:(base.opcionales||[]).map(o=>({id:uid(),nombre:o.nombre,precio:num(o.precio),ok:false})),notaOpc:base.notaOpc||'',
@@ -1313,8 +1317,9 @@ function htmlEditorCot(c,t,m,modo){
   ${modo==='parte'?'':`<div class="g2"><div><label for="ce-eti">Se dirige a</label><select id="ce-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div>
   ${modo==='cot'?`<div><label for="ce-ciu">Ciudad</label><input id="ce-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div>`:'<div></div>'}</div>`}
   ${c.camaras!=null?`<div class="g3"><div><label for="ce-cam">Número de cámaras</label><input id="ce-cam" name="camaras" type="number" min="1" max="20" step="1" inputmode="numeric" value="${esc(parseInt(c.camaras,10)||'')}"></div><div><label for="ce-pcam">Precio por cámara</label><input id="ce-pcam" name="precioCamara" inputmode="decimal" value="${esc(num(c.precioCamara)||'')}" placeholder="0"></div><div><label for="ce-icam">Incluidas sin costo</label><input id="ce-icam" name="camarasIncl" type="number" min="0" step="1" inputmode="numeric" value="${esc(parseInt(c.camarasIncl,10)||0)}"></div></div><p class="hint">Cada cámara suma su precio al total (menos las incluidas sin costo). El número se escribe donde pongas {camaras}, por ejemplo “Filmación multicámara con 5 cámaras…”.</p>`:''}
+  ${c.duracion!=null?`<div class="g2"><div><label for="ce-dur">Duración aproximada por video</label><div class="umin"><input id="ce-dur" name="duracion" type="number" min="0.5" max="120" step="0.5" inputmode="decimal" value="${esc(num(c.duracion)||5)}"><span>min</span></div></div><div></div></div>`:''}
   <label for="ce-int">Descripción</label><textarea id="ce-int" name="intro" rows="4">${esc(c.intro)}</textarea>
-  <p class="hint">Se reemplazan con los datos del trabajo: {videos} (p. ej. “3 videos musicales («A», «B», «C»)”), {canciones}, {temas}, {camaras}, {ciudad}, {artista} y {cliente}. También funcionan en “Qué incluye” y en las secciones.${enTrabajo?' La cantidad sale de “Cantidad” en Precio, y los nombres de “Temas a grabar” del trabajo.':''}</p>${enTrabajo?'<p class="hint cprev" id="ce-prev"></p>':''}
+  <p class="hint">Se reemplazan con los datos del trabajo: {videos} (p. ej. “3 videos musicales («A», «B», «C»)”), {canciones}, {temas}, {camaras}, {duracion}, {ciudad}, {artista} y {cliente}. También funcionan en “Qué incluye” y en las secciones.${enTrabajo?' La cantidad sale de “Cantidad” en Precio, y los nombres de “Temas a grabar” del trabajo.':''}</p>${enTrabajo?'<p class="hint cprev" id="ce-prev"></p>':''}
   <h4>Precio</h4>
   <label for="ce-pm">Cómo se cobra</label><select id="ce-pm" name="precioModo">${opts([['fijo','Precio total fijo'],['porTema','Por tema (cada video o canción)']],pt?'porTema':'fijo')}</select>
   <div id="ce-fijo"${pt?' hidden':''}>
@@ -1413,6 +1418,7 @@ function leerEditorCot(s,c0){
   consideraciones:lineas(F.get('consideraciones')),fechaEtiqueta:g('fechaEtiqueta'),notaFecha:g('notaFecha'),entrega:g('entrega'),material:lineas(F.get('material')),pago:lineas(F.get('pago'))};
  if(F.has('nombre'))n.nombre=g('nombre');
  if(F.has('cantidad'))n.cantidad=Math.max(1,parseInt(F.get('cantidad'),10)||1);
+ if(F.has('duracion'))n.duracion=Math.max(0.5,num(F.get('duracion'))||5);
  if(F.has('camaras'))n.camaras=Math.max(1,parseInt(F.get('camaras'),10)||1);
  if(F.has('precioCamara'))n.precioCamara=r2(num(F.get('precioCamara')));
  if(F.has('camarasIncl'))n.camarasIncl=Math.max(0,parseInt(F.get('camarasIncl'),10)||0);
@@ -1505,7 +1511,7 @@ function montarServicios(s,t0){
   return `<div class="svrow" data-i="${i}"><select data-f="mod" aria-label="Servicio ${i+1}">${modelos().map(x=>`<option value="${esc(x.id)}"${x.id===p.modelo?' selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
    ${pt?`<label class="svn"><input data-f="n" type="number" min="1" step="1" inputmode="numeric" aria-label="Cantidad" value="${Math.max(1,parseInt(p.cantidad,10)||1)}"><span>${esc(uniTxt(p,2))}</span></label>`:alts.length?`<select data-f="alt" aria-label="Opción">${[['','Elegir opción…'],...alts.map(a=>[a.id,a.nombre+' · '+fmtR(num(a.precio),mon())])].map(([v,l])=>`<option value="${esc(v)}"${p.alt===v?' selected':''}>${esc(l)}</option>`).join('')}</select>`:'<span class="hint">Precio fijo</span>'}
    ${p.camaras!=null?`<label class="svn svc"><input data-f="cam" type="number" min="1" max="20" step="1" inputmode="numeric" aria-label="Número de cámaras" value="${parseInt(p.camaras,10)||1}"><span>cám.</span></label>`:''}
-   <b class="svs">${fmt(calcPrecio(p,mon()).total,mon())}</b><button type="button" class="x sm" data-f="del" aria-label="Quitar servicio">×</button></div>`};
+   <b class="svs">${fmt(calcPrecio(p,mon()).total,mon())}</b><button type="button" class="x sm" data-f="del" aria-label="Quitar servicio">×</button>${p.duracion!=null&&p.camaras==null?`<label class="svn svdur"><span>Duración aprox.</span><input data-f="dur" type="number" min="0.5" max="120" step="0.5" inputmode="decimal" aria-label="Duración por video (minutos)" value="${num(p.duracion)||5}"><span>min por video</span></label>`:''}</div>`};
  const calc=()=>conD(descPq(),adicion());
  const vis=()=>{const v=q('motivo').value.trim();if(!v||MOT.includes(v))q('motivo').value=motDef();
   pqBox.hidden=!filas.length||(filas.length<2&&!(num(q('valor').value)>0));s.querySelector('#srvpql').textContent=filas.length>1?'Descuento por paquete':'Descuento especial';if(!filas.length)adBox.hidden=true};
@@ -1529,7 +1535,7 @@ function montarServicios(s,t0){
   const ha=s.querySelector('#srvadh');if(ha)ha.textContent=adBox.hidden?'':qa('on').checked?`El monto pactado es mayor que el precio de lista (${fmtR(L,mon())}); la diferencia sale en la cotización.`:`La cotización quedará en ${fmtR(L,mon())} aunque el trabajo sea por más.`;
   if(r&&llenar&&r.total>0){llenando=true;fo.value=r.total;fo.dispatchEvent(new Event('input',{bubbles:true}));llenando=false}};
  const cambiar=()=>{tocado=true;actualiza(true)};
- box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1)}if(e.target.dataset.f==='cam')filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);cambiar()});
+ box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1)}if(e.target.dataset.f==='cam')filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);if(e.target.dataset.f==='dur'){filas[i].duracion=Math.max(0.5,num(e.target.value)||5);tocado=true;return}cambiar()});
  box.addEventListener('change',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;
   if(e.target.dataset.f==='mod'){const md=modelos().find(x=>x.id===e.target.value);if(md){filas[i]=cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},Math.max(1,parseInt(filas[i].cantidad,10)||1));tocado=true;pinta();actualiza(true)}}
   else if(e.target.dataset.f==='alt'){filas[i].alt=e.target.value;cambiar()}});
