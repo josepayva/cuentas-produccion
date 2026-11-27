@@ -698,6 +698,7 @@ function fTrabajo(t,preCliente,preArt){
   <label for="fv">Fecha de entrega</label><input id="fv" name="entrega" type="date" value="${esc(t.entrega)}">
   <label for="fl">Lugar</label><input id="fl" name="lugar" value="${esc(t.lugar||'')}" placeholder="Dirección o local">
   <div class="g2"><div><label for="fm">Moneda</label><select id="fm" name="moneda">${opts(Object.entries(MONEDAS),t.moneda)}</select></div><div><label for="fo">Monto total <span class="req">*</span></label><input id="fo" name="total" inputmode="decimal" value="${t.total===''?'':esc(t.total)}" placeholder="0.00"></div></div>
+  ${htmlServicios(t)}
   <label>Forma de pago</label>
   <div class="seg"><label><input type="radio" name="modo" value="adelanto"${t.modoPago!=='plan'?' checked':''}><span>Adelanto + saldo al entregar</span></label><label><input type="radio" name="modo" value="plan"${t.modoPago==='plan'?' checked':''}><span>Plan de cuotas</span></label></div>
   <div id="bA">
@@ -732,6 +733,7 @@ function fTrabajo(t,preCliente,preArt){
   <div class="acts"><button class="btn pri" type="submit">${nuevo?'Guardar trabajo':'Guardar cambios'}</button><button class="btn" type="button" data-a="${nuevo?'cerrar':'verT'}" data-id="${t.id}">Cancelar</button></div></form>`,{mount:s=>{
   const F=s.querySelector('form'),fc=s.querySelector('#fc'),far=s.querySelector('#far'),nc=s.querySelector('#nc'),rows=s.querySelector('#rows'),err=s.querySelector('#ferr');
   const total=()=>num(s.querySelector('#fo').value),mon=()=>s.querySelector('#fm').value;
+  const SRV=montarServicios(s,t);
   const modo=()=>F.querySelector('input[name=modo]:checked').value;
   const pintaFilas=()=>{rows.innerHTML=filas.map((q,i)=>`<div class="cuota"><div class="cq1"><label for="qc${i}">Cuota ${i+1}</label><input id="qc${i}" data-i="${i}" data-k="concepto" value="${esc(q.concepto||'')}" placeholder="Ej. Adelanto"></div><div><label for="qm${i}">Monto</label><input id="qm${i}" data-i="${i}" data-k="monto" inputmode="decimal" value="${num(q.monto)>0?esc(q.monto):''}" placeholder="0.00"></div><div><label for="qf${i}">Fecha</label><input id="qf${i}" type="date" data-i="${i}" data-k="fecha" value="${esc(q.fecha||'')}"></div><button type="button" class="x sm" data-r="${i}" aria-label="Quitar cuota">×</button></div>`).join('');refresca()};
   const refresca=()=>{
@@ -791,6 +793,7 @@ function fTrabajo(t,preCliente,preArt){
    const nt=parseInt(D.get('temas'),10);
    t.retencion=!!D.get('retencion');
    Object.assign(t,{titulo,clienteId,artistaId,temas:nt>0?nt:0,temasNom:String(D.get('temasNom')||'').trim(),tipo:String(D.get('tipo')||'').trim(),fecha:D.get('fecha')||'',fechaFin:D.get('fechaFin')&&D.get('fechaFin')>D.get('fecha')?D.get('fechaFin'):'',entrega:D.get('entrega')||'',moneda:D.get('moneda')||'PEN',total:tot,modoPago:md,adelantoReq,cuotas:cq,presupuesto,estadoProd:ep,notas:String(D.get('notas')||'').trim(),horaIni:D.get('horaIni')||'',horaFin:D.get('horaFin')||'',diasExtra:dxs,lugar:String(D.get('lugar')||'').trim(),etiquetas:lista(D.get('etiquetas')),invitados:invs,invCliente:!!D.get('invCliente'),color:String(D.get('color')||''),mod:Date.now()});
+   SRV.aplicar(t);
    if(mcpNs)t.cal={...(t.cal||{}),on:calOn,entrega:!!D.get('calEnt'),notif:!!D.get('calNotif')};
    delete t.vence;
    if(ep==='entregado')t.entregadoEl=D.get('entregadoEl')||t.entregadoEl||t.entrega||hoy();else delete t.entregadoEl;
@@ -1136,8 +1139,8 @@ const CATALOGO_DEF=[
 const MSG_COT_DEF='Hola {nombre}, ¿cómo estás? Te envío la cotización {numero} para «{trabajo}». Cualquier duda me escribes. Saludos, {negocio}.';
 // Cómo se cobra cada modelo: precio fijo o por tema (con monto base y descuento por cantidad)
 const PRECIO_DEF={
- videoclip:{precioModo:'porTema',precio:2500,precioBase:0,unidad:{s:'video musical',p:'videos musicales'},escala:{tipo:'pct',tramos:[{desde:2,valor:10},{desde:3,valor:15}]}},
- envivo:{precioModo:'porTema',precio:300,precioBase:3500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
+ videoclip:{precioModo:'porTema',precio:2500,precioBase:0,unidad:{s:'video musical',p:'videos musicales'},escala:{tipo:'pct',tramos:[{desde:2,valor:15},{desde:3,valor:20}]}},
+ envivo:{precioModo:'porTema',precio:300,precioBase:1500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
  boda:{precioModo:'fijo',escala:{tipo:'ninguna',tramos:[]}}};
 MODELOS_DEF.forEach(x=>Object.assign(x,PRECIO_DEF[x.id]||{}));
 const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>({...(x.precioModo?{}:PRECIO_DEF[x.id]||{}),...x,intro:introActual(x.intro)})):MODELOS_DEF;
@@ -1377,6 +1380,61 @@ function fCotModelo(id,modeloId,parte){
 }
 function fCot(id){const t=S.trabajos.find(x=>x.id===id);if(!t)return;if(t.cot&&t.cot.modo==='paquete')fPaquete(id);else if(t.cot&&t.cot.modo!=='modelo'&&(t.cot.items||[]).length)fCotPartidas(id);else fCotModelo(id)}
 
+/* ---------- servicios y paquetes en el formulario del trabajo ---------- */
+// Calcula el monto con los modelos (cantidades, descuentos y paquete) y deja lista la cotización del trabajo
+function htmlServicios(t){
+ const c=t.cot,tiene=c&&(c.modo==='modelo'||(c.modo==='paquete'&&(c.partes||[]).length));
+ return `<details class="srvd"${tiene?' open':''}><summary>Calcular el monto con servicios o paquete</summary>
+  <p class="hint" style="margin-top:4px">Elige uno o varios servicios (por ejemplo 2 videoclips + una sesión en vivo de 3 canciones). Se aplican los precios y descuentos de tus modelos y el monto total se llena solo.</p>
+  <div id="srv"></div>
+  <div class="chips presets srvadd">${modelos().map(x=>`<button type="button" class="chip" data-srv="${esc(x.id)}">+ ${esc(x.nombre)}</button>`).join('')}</div>
+  <div id="srvpq" hidden><label>Descuento por paquete</label><div class="g3 dsc3"><select data-pq="tipo" aria-label="Tipo de descuento"><option value="monto">S/</option><option value="pct">%</option></select><input data-pq="valor" inputmode="decimal" aria-label="Descuento por paquete" placeholder="0"><input data-pq="motivo" aria-label="Motivo" value="Descuento por paquete"></div></div>
+  <div id="srvtot"></div>
+  <p class="hint">Para cambiar textos o precios solo para este cliente, usa “Armar cotización” en el trabajo.</p>
+ </details>`;
+}
+function montarServicios(s,t0){
+ const c0=t0.cot,box=s.querySelector('#srv'),fo=s.querySelector('#fo'),ftm=s.querySelector('#ftm'),pqBox=s.querySelector('#srvpq'),tot=s.querySelector('#srvtot');
+ if(!box)return {aplicar:()=>{}};
+ let filas=c0&&c0.modo==='paquete'?(c0.partes||[]).map(p=>JSON.parse(JSON.stringify(p))):c0&&c0.modo==='modelo'?[JSON.parse(JSON.stringify(c0))]:[];
+ let tocado=false;
+ const dm=c0&&c0.modo==='paquete'?c0.descuento||{}:{};
+ pqBox.querySelector('[data-pq=tipo]').value=dm.tipo||'monto';pqBox.querySelector('[data-pq=valor]').value=num(dm.valor)||'';if(dm.motivo)pqBox.querySelector('[data-pq=motivo]').value=dm.motivo;
+ const mon=()=>(s.querySelector('#fm')||{}).value||'PEN';
+ const descPq=()=>({tipo:pqBox.querySelector('[data-pq=tipo]').value,valor:r2(num(pqBox.querySelector('[data-pq=valor]').value)),motivo:pqBox.querySelector('[data-pq=motivo]').value.trim()||'Descuento por paquete'});
+ const fila=(p,i)=>{const md=modelos().find(x=>x.id===p.modelo)||{},pt=p.precioModo==='porTema',alts=p.alternativas||[];
+  return `<div class="svrow" data-i="${i}"><select data-f="mod" aria-label="Servicio ${i+1}">${modelos().map(x=>`<option value="${esc(x.id)}"${x.id===p.modelo?' selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
+   ${pt?`<label class="svn"><input data-f="n" type="number" min="1" step="1" inputmode="numeric" aria-label="Cantidad" value="${Math.max(1,parseInt(p.cantidad,10)||1)}"><span>${esc(uniTxt(p,2))}</span></label>`:alts.length?`<select data-f="alt" aria-label="Opción">${[['','Elegir opción…'],...alts.map(a=>[a.id,a.nombre+' · '+fmtR(num(a.precio),mon())])].map(([v,l])=>`<option value="${esc(v)}"${p.alt===v?' selected':''}>${esc(l)}</option>`).join('')}</select>`:'<span class="hint">Precio fijo</span>'}
+   <b class="svs">${fmt(calcPrecio(p,mon()).total,mon())}</b><button type="button" class="x sm" data-f="del" aria-label="Quitar servicio">×</button></div>`};
+ const calc=()=>filas.length>1||num(descPq().valor)>0?calcPaquete({partes:filas,descuento:descPq()},mon()):filas.length?calcPrecio(filas[0],mon()):null;
+ const pinta=()=>{box.innerHTML=filas.map(fila).join('');pqBox.hidden=filas.length<2;actualiza(false)};
+ const actualiza=(llenar)=>{
+  box.querySelectorAll('.svrow').forEach((r,i)=>{const b=r.querySelector('.svs');if(b&&filas[i])b.textContent=fmt(calcPrecio(filas[i],mon()).total,mon())});
+  const r=calc();tot.innerHTML=r?htmlDesglose(r,mon()):'';
+  if(r&&llenar&&r.total>0){fo.value=r.total;fo.dispatchEvent(new Event('input',{bubbles:true}))}};
+ const cambiar=()=>{tocado=true;actualiza(true)};
+ box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1);if(filas.length===1&&ftm)ftm.value=filas[i].cantidad}cambiar()});
+ box.addEventListener('change',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;
+  if(e.target.dataset.f==='mod'){const md=modelos().find(x=>x.id===e.target.value);if(md){filas[i]=cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},Math.max(1,parseInt(filas[i].cantidad,10)||1));tocado=true;pinta();actualiza(true)}}
+  else if(e.target.dataset.f==='alt'){filas[i].alt=e.target.value;cambiar()}});
+ box.addEventListener('click',e=>{const d=e.target.closest('[data-f=del]');if(!d)return;filas.splice(+d.closest('.svrow').dataset.i,1);tocado=true;pinta();actualiza(true)});
+ s.querySelector('.srvadd').addEventListener('click',e=>{const b=e.target.closest('[data-srv]');if(!b)return;const md=modelos().find(x=>x.id===b.dataset.srv);if(!md)return;
+  const temas=parseInt(ftm&&ftm.value,10)||0;filas.push(cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},filas.length===0&&temas>0?temas:1));tocado=true;pinta();actualiza(true);
+  const n=box.querySelector('.svrow:last-child [data-f=n]');n&&n.focus()});
+ pqBox.addEventListener('input',cambiar);pqBox.addEventListener('change',cambiar);
+ if(ftm)ftm.addEventListener('input',()=>{if(filas.length===1&&filas[0].precioModo==='porTema'){const v=parseInt(ftm.value,10)||0;if(v>0){filas[0].cantidad=v;const n=box.querySelector('[data-f=n]');if(n)n.value=v;cambiar()}}});
+ s.querySelector('#fm')&&s.querySelector('#fm').addEventListener('change',()=>actualiza(false));
+ pinta();
+ return {aplicar(t){
+  if(!tocado||!filas.length)return;
+  const prev=t.cot||{},dq=descPq();
+  if(filas.length===1&&!(num(dq.valor)>0)){const p=filas[0];
+   t.cot={...(prev.modo==='modelo'?prev:{}),...p,modo:'modelo',num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
+   if(p.precioModo==='porTema')t.temas=Math.max(1,parseInt(p.cantidad,10)||1)}
+  else t.cot={...(prev.modo==='paquete'?prev:{titulo:'Cotización – Paquete de producción audiovisual',etiqueta:filas[0].etiqueta||'Cliente',ciudad:filas[0].ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',consideraciones:filas[0].consideraciones||[],pago:filas[0].pago||[]}),
+   modo:'paquete',partes:filas.map(p=>{const q={...p,modo:'modelo'};delete q.num;delete q.emitida;delete q.valida;return q}),descuento:dq,num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
+ }};
+}
 /* ---------- paquete: varios servicios en una sola cotización ---------- */
 function fPaquete(id){
  const t=S.trabajos.find(x=>x.id===id);if(!t||!t.cot||t.cot.modo!=='paquete')return;const m=t.moneda||'PEN',c=t.cot,dm=c.descuento||{};
