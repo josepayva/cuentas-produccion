@@ -501,6 +501,12 @@ async def numeracion(p):
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(400)
     d = await cotizar('Tres')
     comprobar(d == 'EMS-1300', 'se puede cambiar el número y quitar el año: ' + d)
+    await pg.locator('[data-a=verT]:visible', has_text='Uno').first.click(); await pg.wait_for_timeout(300)
+    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    comprobar(await pg.input_value('#qn') == 'EMS-2026-1148', 'la cotización muestra su número para editarlo')
+    await pg.fill('#qn', 'ems-2026-1148b'); await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
+    e = next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == 'Uno')['cot']['num']
+    comprobar(e == 'EMS-2026-1148B', 'se puede corregir el número a mano: ' + e)
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 

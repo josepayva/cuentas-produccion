@@ -1988,7 +1988,8 @@ function fCotModelo(id,modeloId,parte){
   ${prev&&!esParte?'<p class="hint">Cambiar de modelo reemplaza el contenido por el del modelo elegido.</p>':''}
   ${htmlEditorCot(c,t,m,esParte?'parte':'cot')}
   ${esParte?'':`<label class="chk"><input type="checkbox" name="usarTotal" checked> Usar el total como monto del trabajo</label>
-  <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc((prev&&prev.valida)||sumarDias(emit,num(md.validez)||num(S.aj.cotValidez)||15))}"></div></div>
+  <div class="g3"><div><label for="qn">Número</label><input id="qn" name="numero" value="${esc((prev&&prev.num)||(t.cot&&t.cot.num)||'')}" placeholder="${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}" autocapitalize="characters"></div><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc((prev&&prev.valida)||sumarDias(emit,num(md.validez)||num(S.aj.cotValidez)||15))}"></div></div>
+  <p class="hint">Si dejas el número vacío, se pone el siguiente automáticamente.</p>
   <p class="hint">${t.fecha?esc(c.fechaEtiqueta||'Fecha')+': '+esc(fechasRodaje(t))+' (se toma del trabajo).':'El trabajo aún no tiene fecha: en el PDF saldrá “Por definir”.'}</p>`}
   <p class="err" id="ce-err" role="alert"></p>
   <div class="acts">${esParte?`<button class="btn pri" type="submit" name="ir" value="">Guardar parte</button><button class="btn" type="button" data-a="fPaquete" data-id="${t.id}">Volver al paquete</button>`:`<button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${t.id}">Cancelar</button>`}</div></form>`,{mount:s=>{
@@ -2006,7 +2007,7 @@ function fCotModelo(id,modeloId,parte){
    if(!(r.total>0)){err.textContent=n.precioModo==='porTema'?'Escribe el precio por '+uniTxt(n,1)+'.':'Escribe el precio total.';return}
    if(esParte){await mutT(id,x=>{x.cot.partes[parte]={...n,modo:'modelo',nombre:n.nombre||md.nombre};const tp=temasDePartes(x.cot.partes);if(tp)x.temas=tp});toast('Parte guardada.');fPaquete(id);return}
    const emi=D.get('emitida')||hoy();
-   const cot={...n,num:(prev&&prev.num)||(t.cot&&t.cot.num)||sigNumCot(emi.slice(0,4)),emitida:emi,valida:D.get('valida')||''};
+   const cot={...n,num:String(D.get('numero')||'').trim().toUpperCase()||(prev&&prev.num)||(t.cot&&t.cot.num)||sigNumCot(emi.slice(0,4)),emitida:emi,valida:D.get('valida')||''};
    const usar=!!D.get('usarTotal')&&r.total>0,ir=e.submitter&&e.submitter.value;
    await mutT(id,x=>{x.cot=cot;if(usar)x.total=r.total;if(cot.precioModo==='porTema'&&cot.cantidad!==(parseInt(x.temas,10)||0))x.temas=cot.cantidad});
    toast('Cotización '+cot.num+' guardada.');verT(id);
@@ -2100,7 +2101,8 @@ function fPaquete(id){
   <div class="acts" style="margin:4px 0"><button type="button" class="btn sm" id="pq-junta">Juntar las de todas las partes</button></div>
   <label for="pq-pag">Forma de pago (una por línea)</label><textarea id="pq-pag" name="pago" rows="2">${esc((c.pago||[]).join('\n'))}</textarea>
   <label class="chk"><input type="checkbox" name="usarTotal" checked> Usar el total del paquete como monto del trabajo</label>
-  <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c.valida||sumarDias(emit,num(S.aj.cotValidez)||15))}"></div></div>
+  <div class="g3"><div><label for="qn">Número</label><input id="qn" name="numero" value="${esc(c.num||'')}" placeholder="${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}" autocapitalize="characters"></div><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c.valida||sumarDias(emit,num(S.aj.cotValidez)||15))}"></div></div>
+  <p class="hint">Si dejas el número vacío, se pone el siguiente automáticamente.</p>
   <p class="err" id="pq-err" role="alert"></p>
   <div class="acts"><button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div></form>`,{mount:s=>{
   const F=s.querySelector('form');
@@ -2119,7 +2121,8 @@ function fPaquete(id){
   F.addEventListener('submit',async e=>{e.preventDefault();
    const n=leer(),r=calcPaquete(n,m);
    if(!(n.partes||[]).length||!(r.total>0)){s.querySelector('#pq-err').textContent='Agrega al menos un servicio con precio.';return}
-   const cot={...n,num:n.num||sigNumCot(String(n.emitida).slice(0,4))};
+   const numEsc=String(new FormData(F).get('numero')||'').trim().toUpperCase();
+   const cot={...n,num:numEsc||n.num||sigNumCot(String(n.emitida).slice(0,4))};
    const usar=!!new FormData(F).get('usarTotal'),ir=e.submitter&&e.submitter.value;
    await mutT(id,x=>{x.cot={...cot,partes:x.cot.partes};if(usar)x.total=r.total;const tp=temasDePartes(x.cot.partes);if(tp)x.temas=tp});
    toast('Cotización '+cot.num+' guardada.');verT(id);
