@@ -539,3 +539,5 @@ form label.mini,.mini{display:inline-flex;align-items:center;gap:6px;font-size:1
 .cotEd .presets{margin:2px 0 6px;gap:6px}.catd{margin:4px 0 8px}.catd summary{cursor:pointer;color:var(--mute);font-weight:650;font-size:14px;padding:6px 0}
 .cotEd .chip{min-height:32px;padding:4px 10px;font-size:13px;white-space:normal;text-align:left;max-width:100%}
 @media (min-width:700px){.orow{grid-template-columns:1fr 110px auto 36px}.orow [data-f=n]{grid-column:auto}.orow:not(:has([data-f=ok])) [data-f=p]{grid-column:auto}}
+
+.cprev{background:color-mix(in srgb,var(--line) 40%,transparent);border-radius:10px;padding:8px 10px;color:var(--ink)}

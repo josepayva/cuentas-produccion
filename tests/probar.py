@@ -257,8 +257,10 @@ async def cotizacion(p):
     await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
     await pg.fill('#ft', 'Videoclip Amanecer'); await pg.fill('#far', 'Banda Sol'); await pg.fill('#fo', '1000'); await pg.fill('#ff', '2026-12-10')
     await pg.select_option('#fe', 'cotizado')
+    await pg.fill('#ftm', '3'); await pg.fill('#sheet [name=temasNom]', 'Amanecer, Lluvia, Volver')
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
     await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(400)
+    comprobar('3 videos musicales («Amanecer», «Lluvia», «Volver»)' in await pg.inner_text('#ce-prev'), 'la descripción usa la cantidad y los nombres de los temas')
     comprobar(await pg.locator('.segm button.on').inner_text() == 'Videoclip', 'elige el modelo Videoclip según el tipo de trabajo')
     comprobar('Sony FX3' in await pg.input_value('#ce-equipos') and await pg.locator('#ce-opc .orow').count() == 3, 'trae equipos incluidos y los 3 opcionales del modelo')
     await pg.fill('#ce-ciu', 'Juliaca'); await pg.fill('#ce-pre', '2500')
@@ -272,6 +274,9 @@ async def cotizacion(p):
         await pg.click('#sheet button[name=ir][value=pdf]')
     d = await dl.value
     await d.save_as('/tmp/cot-modelo.pdf')
+    import subprocess
+    txt_pdf = subprocess.run(['pdftotext', '/tmp/cot-modelo.pdf', '-'], capture_output=True, text=True).stdout
+    comprobar('3 videos musicales' in txt_pdf and 'Juliaca' in txt_pdf, 'el PDF dice 3 videos musicales')
     comprobar(d.suggested_filename.startswith('COT-2026-001'), 'numera la cotización: ' + d.suggested_filename)
     t = servidor(await estado(pg), 'trabajos')[0]
     comprobar(t['cot']['modo'] == 'modelo' and t['total'] == 2550 and t['cot']['ciudad'] == 'Juliaca', 'guarda la cotización y actualiza el monto')

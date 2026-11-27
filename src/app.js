@@ -1088,7 +1088,7 @@ function dibujarCotPartidas(d,t,logo){
 // Basados en las cotizaciones de eMotion Studios. Se editan en Ajustes y se copian a cada trabajo al cotizar.
 const MODELOS_DEF=[
  {id:'videoclip',nombre:'Videoclip',titulo:'Cotización – Producción de video musical',etiqueta:'Cliente',precio:2500,
-  intro:'A continuación, se detalla la cotización para la producción de 1 video musical, con una duración aproximada de 5 minutos, a realizarse en la ciudad de {ciudad}.',
+  intro:'A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de 5 minutos por video, a realizarse en la ciudad de {ciudad}.',
   servicio:'Servicios principales',
   incluye:['Producción y filmación (dirección, cámara y operador)','Edición y postproducción (incluye corrección de color)','Entrega optimizada para redes'],
   equipos:['Cámara Sony FX3 Cinema Line (grabación en 4K)','Lentes de cine Nisi Athena','Drone DJI Mavic 2 Pro','Iluminación básica (2 luces LED + difusores y soportes)','Trípodes y estabilizadores','Equipo técnico (3 personas)','2 días de rodaje (recomendado)'],
@@ -1101,7 +1101,7 @@ const MODELOS_DEF=[
   material:['Video final en resolución 4K'],
   pago:['50% a la firma del contrato','50% contra entrega del producto final'],validez:15},
  {id:'envivo',nombre:'Sesión en vivo',titulo:'Cotización – Realización de una sesión de video en vivo',etiqueta:'Cliente',precio:8000,
-  intro:'A continuación, se detalla la cotización para la producción y filmación de una sesión musical en vivo, a realizarse en la ciudad de {ciudad}, contemplando aproximadamente 15 canciones, con posibilidad de registrar canciones adicionales dentro del tiempo de producción contratado.',
+  intro:'A continuación, se detalla la cotización para la producción y filmación de una sesión musical en vivo, a realizarse en la ciudad de {ciudad}, contemplando aproximadamente {canciones}, con posibilidad de registrar canciones adicionales dentro del tiempo de producción contratado.',
   servicio:'Producción y filmación de sesión musical en vivo',
   incluye:['Dirección y realización audiovisual.','Filmación multicámara con hasta 5 cámaras de alta calidad y en 4K.','Operación y coordinación de cámaras durante la sesión.','Edición y postproducción del material.','Corrección de color.','Entrega del material final optimizado para plataformas digitales.','Entrega final en resolución 4K.'],
   equipos:[],opcionales:[],notaOpc:'',altTitulo:'Opciones',alternativas:[],
@@ -1134,14 +1134,19 @@ const CATALOGO_DEF=[
  ['Iluminación profesional (3 luces LED COB + C-Stand + difusores)',300],['Máquina de humo',50],['Cámara secundaria',500],['Cámara adicional con operador',1000],['Tomas con dron',500],['Edición resumen de 30 a 45 minutos',500],['Video de preboda para proyectar o invitación digital',300],['Día adicional de rodaje',800]
 ].map(([nombre,precio],i)=>({id:'c'+i,nombre,precio}));
 const MSG_COT_DEF='Hola {nombre}, ¿cómo estás? Te envío la cotización {numero} para «{trabajo}». Cualquier duda me escribes. Saludos, {negocio}.';
-const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos:MODELOS_DEF;
+const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>({...x,intro:introActual(x.intro)})):MODELOS_DEF;
 const catalogo=()=>Array.isArray(S.aj.catalogo)?S.aj.catalogo:CATALOGO_DEF;
 const lineas=v=>String(v||'').split('\n').map(x=>x.replace(/^\s*[•·\-*]\s*/,'').trim()).filter(Boolean);
 const cotLista=t=>!!(t&&t.cot&&(t.cot.modo==='modelo'||(t.cot.items||[]).length));
 function totModelo(c){const alt=(c.alternativas||[]).find(a=>a.id&&a.id===c.alt);return r2((alt?num(alt.precio):num(c.precio))+(c.opcionales||[]).filter(o=>o.ok).reduce((a,o)=>a+num(o.precio),0))}
 // Texto de las fechas de rodaje del trabajo, p. ej. "4 y 5 de agosto de 2026"
 function fechasRodaje(t){const bs=bloques(t);if(!bs.length)return'';return bs.map(b=>b.hasta&&b.hasta>b.fecha?fd(b.fecha)+' al '+fd(b.hasta):fd(b.fecha)).join(' · ')}
-const ponerDatos=(x,t,c)=>String(x||'').replace(/\{ciudad\}/g,c.ciudad||'(ciudad)').replace(/\{artista\}/g,nomArt(t)||'').replace(/\{cliente\}/g,(cli(t.clienteId)||{}).nombre||'').replace(/\{trabajo\}/g,t.titulo||'');
+// Textos de la primera versión de los modelos (fijaban 1 video y 15 canciones): se cambian por los que usan la cantidad de temas del trabajo
+const introActual=x=>String(x||'').replace('A continuación, se detalla la cotización para la producción de 1 video musical, con una duración aproximada de 5 minutos, a realizarse en la ciudad de {ciudad}.','A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de 5 minutos por video, a realizarse en la ciudad de {ciudad}.').replace('contemplando aproximadamente 15 canciones, con posibilidad','contemplando aproximadamente {canciones}, con posibilidad');
+function datosTemas(t){const n=parseInt(t&&t.temas,10)||0,nom=String((t&&t.temasNom)||'').split(',').map(x=>x.trim()).filter(Boolean);
+ const lista=nom.length?' ('+nom.map(x=>'«'+x+'»').join(', ')+')':'';
+ return {n,videos:(n>1?n+' videos musicales':'1 video musical')+lista,canciones:n>0?(n===1?'1 canción':n+' canciones')+lista:'las canciones acordadas',temas:n>0?String(n):''}}
+const ponerDatos=(x,t,c)=>{const d=datosTemas(t);return introActual(x).replace(/\{ciudad\}/g,c.ciudad||'(ciudad)').replace(/\{artista\}/g,nomArt(t)||'').replace(/\{cliente\}/g,(cli(t.clienteId)||{}).nombre||'').replace(/\{trabajo\}/g,t.titulo||'').replace(/\{videos\}/g,d.videos).replace(/\{canciones\}/g,d.canciones).replace(/\{temas\}/g,d.temas||'1')};
 
 // Cotización nueva a partir de un modelo y los datos del trabajo
 function cotDesdeModelo(md,t){
@@ -1169,7 +1174,7 @@ function htmlEditorCot(c,t,m){
   <div class="g2"><div><label for="ce-eti">Se dirige a</label><select id="ce-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div>
   ${t?`<div><label for="ce-ciu">Ciudad</label><input id="ce-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div>`:`<div><label for="ce-pre">Precio base</label><input id="ce-pre" name="precio" inputmode="decimal" value="${esc(c.precio||'')}"></div>`}</div>
   <label for="ce-int">Descripción</label><textarea id="ce-int" name="intro" rows="4">${esc(c.intro)}</textarea>
-  <p class="hint">Escribe {ciudad}, {artista} o {cliente} y se reemplaza con los datos del trabajo.</p>
+  <p class="hint">Se reemplazan con los datos del trabajo: {videos} (p. ej. “3 videos musicales («A», «B», «C»)”), {canciones}, {temas}, {ciudad}, {artista} y {cliente}.${t?' La cantidad y los nombres de los temas salen de “Temas a grabar” del trabajo.':''}</p>${t?'<p class="hint cprev" id="ce-prev"></p>':''}
   <h4>Precio</h4>
   <label for="ce-alt-t" class="lbls">Si das opciones con distinto precio (por ejemplo Full HD o 4K), agrégalas aquí; si no, deja la lista vacía.</label>
   <div id="ce-alt">${(c.alternativas||[]).map(altRow).join('')}</div>
@@ -1233,7 +1238,7 @@ function fCotModelo(id,modeloId){
  const t=S.trabajos.find(x=>x.id===id);if(!t)return;const m=t.moneda||'PEN';
  const prev=t.cot&&t.cot.modo==='modelo'?t.cot:null;
  const md=modelos().find(x=>x.id===(modeloId||(prev&&prev.modelo)))||modelos().find(x=>nrm(x.nombre)===nrm(t.tipo))||modelos()[0];
- const c=prev&&(!modeloId||modeloId===prev.modelo)?prev:{...cotDesdeModelo(md,t),...(prev&&prev.ciudad?{ciudad:prev.ciudad}:{})};
+ const c=prev&&(!modeloId||modeloId===prev.modelo)?{...prev,intro:introActual(prev.intro)}:{...cotDesdeModelo(md,t),...(prev&&prev.ciudad?{ciudad:prev.ciudad}:{})};
  const emit=(prev&&prev.emitida)||hoy();
  cargarPdf().catch(()=>{});cargarLogo().catch(()=>{});
  abrir(cab(prev&&prev.num?'Cotización '+esc(prev.num):'Cotización',esc(t.titulo))+`<form novalidate>
@@ -1247,7 +1252,8 @@ function fCotModelo(id,modeloId){
   <p class="err" id="ce-err" role="alert"></p>
   <div class="acts"><button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${t.id}">Cancelar</button></div></form>`,{mount:s=>{
   const F=s.querySelector('form'),tot=s.querySelector('#ce-total'),err=s.querySelector('#ce-err');
-  const suma=()=>{tot.textContent=fmtR(totModelo(leerEditorCot(s,c)),m)};
+  const prevD=s.querySelector('#ce-prev');
+  const suma=()=>{const n=leerEditorCot(s,c);tot.textContent=fmtR(totModelo(n),m);if(prevD)prevD.innerHTML='<b>Así se verá:</b> '+esc(ponerDatos(n.intro,t,n))};
   montarEditorCot(s,m,suma);suma();
   s.querySelector('.segm').addEventListener('click',e=>{const b=e.target.closest('[data-mod]');if(!b||b.classList.contains('on'))return;if(b.dataset.mod==='__partidas')fCotPartidas(id,true);else fCotModelo(id,b.dataset.mod)});
   s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(md.validez)||num(S.aj.cotValidez)||15)});
