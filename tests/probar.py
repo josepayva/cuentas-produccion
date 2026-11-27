@@ -460,6 +460,29 @@ async def servicios_en_trabajo(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def sin_desborde(p):
+    """En el iPhone nada debe hacer que la pantalla se desplace hacia los costados."""
+    b, ctx, pg = await nueva(p, viewport={'width': 375, 'height': 812})
+    largo = 'Producción audiovisual Municipalidad Distrital de Acomayo Cusco'
+    await nuevo_trabajo(pg, titulo=largo, artista='Agrupación Folklórica Virgen de la Candelaria de Acomayo', monto='1234567', fr='987654')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await nuevo_trabajo(pg, titulo='Videoclip', artista='Anita', monto='2500', fr='1250')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    malos = []
+    for v in ['resumen', 'trabajos', 'calendario', 'clientes', 'artistas', 'gastos', 'reportes']:
+        await pg.goto(URL + '?v=' + v + '#' + v); await pg.wait_for_timeout(700)
+        r = await pg.evaluate("""()=>{const W=document.documentElement.clientWidth;const sw=document.documentElement.scrollWidth;
+          const fuera=[...document.querySelectorAll('#view *')].filter(e=>{const b=e.getBoundingClientRect();return b.width>0&&b.right>W+1}).slice(0,3).map(e=>e.tagName+'.'+e.className+': '+(e.textContent||'').trim().slice(0,40));
+          return {sw,W,fuera}}""")
+        if r['sw'] > r['W'] + 1:
+            malos.append(f"{v}: ancho {r['sw']} > {r['W']} · {r['fuera']}")
+    comprobar(not malos, 'ninguna vista se desborda a los costados' + ('' if not malos else ': ' + ' | '.join(malos)))
+    await pg.goto(URL + '?v=r#resumen'); await pg.wait_for_timeout(700)
+    await pg.screenshot(path='/tmp/resumen-iphone.png', full_page=True)
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:
