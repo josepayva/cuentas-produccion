@@ -276,7 +276,7 @@ async def cotizacion(p):
     await pg.locator('[data-catbox=opc] [data-cat]', has_text='Día adicional').click()
     comprobar(await pg.locator('#ce-opc .orow').count() == 4, 'agrega un opcional desde el catálogo')
     await pg.locator('#ce-opc .orow', has=pg.locator('input[value="Máquina de humo"]')).locator('[data-f=ok]').check()
-    await pg.select_option('#sheet [name=dTipo]', 'pct'); await pg.fill('#sheet [name=dValor]', '5'); await pg.fill('#sheet [name=dMotivo]', 'Cliente frecuente')
+    await pg.select_option('#sheet [name=dTipo]', 'pct'); await pg.fill('#sheet [name=dValor]', '5'); await pg.fill('#sheet [name=dMotivo]', 'Cliente frecuente'); await pg.check('#sheet [name=dVer]')
     await pg.wait_for_timeout(150)
     des = await pg.inner_text('#ce-desg')
     comprobar('Cliente frecuente' in des and '5,747.50' in des and 'ahorra' in des, 'descuento especial sobre el total: ' + des.replace(chr(10), ' | '))
@@ -589,6 +589,67 @@ async def cotizacion_nueva(p):
     comprobar(await pg.locator('#sheet form').count() == 1 and 'Spot Tienda' in await pg.inner_text('#sheet'), '“Otro” abre la cotización por conceptos: ' + (await pg.inner_text('#sheet .shd')))
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await pg.screenshot(path='/tmp/cotq.png', full_page=False)
+    await b.close()
+
+@prueba
+async def precio_pactado(p):
+    import subprocess
+    pdftxt = lambda ruta: ' '.join(subprocess.run(['pdftotext', ruta, '-'], capture_output=True, text=True).stdout.split())
+    b, ctx, pg = await nueva(p, viewport={'width': 1280, 'height': 900})
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=videoclip]'); await pg.wait_for_timeout(300)
+    await pg.fill('#ft', 'Larry Prueba'); await pg.fill('#far', 'Larry'); await pg.fill('#ff', '2026-12-18')
+    comprobar(await pg.input_value('#fo') == '2500' and await pg.is_hidden('#srvpq'), 'videoclip a precio de lista, sin descuento')
+    await pg.fill('#fo', '1800'); await pg.wait_for_timeout(150)
+    comprobar(await pg.is_visible('#srvpq') and await pg.input_value('#srvpq [data-pq=valor]') == '700' and await pg.inner_text('#srvpql') == 'Descuento especial', 'al pactar 1,800 aparece el descuento de 700')
+    comprobar(not await pg.is_checked('#srvpq [data-pq=ver]') and '28%' in await pg.inner_text('#srvpqh'), 'la casilla del PDF viene desmarcada y muestra el 28%: ' + await pg.inner_text('#srvpqh'))
+    comprobar('no sale en el PDF' in await pg.inner_text('#srvtot'), 'el desglose avisa que no sale en el PDF')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['total'] == 1800 and t['cot']['modo'] == 'modelo' and t['cot']['descuento']['valor'] == 700 and t['cot']['descPdf'] is False, 'se guarda el descuento en la cotización: ' + str(t['cot'].get('descuento')))
+    comprobar(not await pg.is_checked('#sheet [name=dVer]') and '1,800.00' in await pg.inner_text('#ce-desg'), 'el editor de la cotización muestra 1,800 con la casilla desmarcada')
+    async with pg.expect_download() as dl:
+        await pg.click('#sheet button[name=ir][value=pdf]')
+    await (await dl.value).save_as('/tmp/pactado1.pdf')
+    tp = pdftxt('/tmp/pactado1.pdf')
+    comprobar('1,800.00' in tp and '700.00' not in tp and 'Descuento especial' not in tp and '2,500.00' not in tp, 'el PDF muestra solo el total pactado')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.cqrow h3'); await pg.wait_for_timeout(300)
+    det = await pg.inner_text('#sheet')
+    comprobar('Precio de lista' in det and '2,500.00' in det and '28%' in det, 'el trabajo muestra precio de lista y descuento')
+    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    await pg.check('#sheet [name=dVer]')
+    async with pg.expect_download() as dl:
+        await pg.click('#sheet button[name=ir][value=pdf]')
+    await (await dl.value).save_as('/tmp/pactado2.pdf')
+    tp = pdftxt('/tmp/pactado2.pdf')
+    comprobar('2,500.00' in tp and '700.00' in tp and '1,800.00' in tp, 'con la casilla marcada el PDF muestra valor, descuento y total')
+    # monto mayor: adicional
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.cqrow h3'); await pg.wait_for_timeout(300)
+    await pg.click('#sheet [data-a=editarT]'); await pg.wait_for_timeout(400)
+    comprobar(await pg.input_value('#srvpq [data-pq=valor]') == '700', 'al editar se ve el descuento guardado')
+    await pg.fill('#fo', '2800'); await pg.wait_for_timeout(150)
+    comprobar(await pg.is_hidden('#srvpq') and await pg.is_visible('#srvad') and await pg.input_value('#srvad [data-ad=monto]') == '300', 'si el monto es mayor, ofrece la diferencia como adicional')
+    await pg.fill('#srvad [data-ad=motivo]', 'Dron adicional')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['total'] == 2800 and t['cot']['adicional'] == {'monto': 300, 'motivo': 'Dron adicional'} and not t['cot']['descuento']['valor'], 'se guarda el adicional: ' + str(t['cot'].get('adicional')))
+    # trabajo antiguo: monto cambiado a mano sin descuento en la cotización
+    await pg.click('#sheet [data-a=editarT]'); await pg.wait_for_timeout(400)
+    await pg.fill('#fo', '2000'); await pg.wait_for_timeout(150)
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['cot']['descuento']['valor'] == 500 and not t['cot'].get('adicional'), 'al bajar a 2,000 el adicional se quita y queda descuento de 500')
+    # reportes: el trabajo confirmado cuenta en descuentos otorgados
+    await pg.click('#sheet [data-a=aprobar]'); await pg.wait_for_timeout(500)
+    if await pg.locator('#sheet form').count():
+        await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(500)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['estadoProd'] == 'produccion' and t['total'] == 2000, 'al aprobar se mantiene el precio pactado: ' + str(t['total']))
+    await pg.goto(pg.url.split('#')[0] + '#reportes'); await pg.wait_for_timeout(800)
+    rep = await pg.inner_text('.figs')
+    comprobar('Descuentos otorgados' in rep and '500.00' in rep and '20%' in rep, 'Reportes muestra los descuentos otorgados: ' + rep.replace(chr(10), ' | ')[-160:])
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
 async def main():

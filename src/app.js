@@ -531,6 +531,8 @@ function vReportes(){
  const conP=tY.filter(t=>Object.values(t.presupuesto||{}).some(v=>num(v)>0));
  const pres=conP.reduce((a,t)=>a+Object.values(t.presupuesto).reduce((s,v)=>s+num(v),0),0),real=conP.reduce((a,t)=>a+gastosT(t),0);
  const debe=agrupar(ts.flatMap(t=>(t.gastos||[]).filter(g=>g.por&&!g.dev)),g=>g.por,g=>num(g.monto));
+ const conD=S.trabajos.filter(t=>(t.fecha||'').startsWith(y)&&cuenta(t)&&(todo||(t.moneda||'PEN')===m)).map(t=>({t,d:todo?aSoles(descuentoT(t),t.moneda||'PEN'):descuentoT(t),l:todo?aSoles(precioListaT(t),t.moneda||'PEN'):precioListaT(t)})).filter(x=>x.d>0);
+ const dTot=r2(conD.reduce((a,x)=>a+x.d,0)),dLis=conD.reduce((a,x)=>a+x.l,0),mesAct=hoy().slice(0,7),dMes=conD.filter(x=>x.t.fecha.startsWith(mesAct));
  const porPagar=agrupar(ts.filter(t=>t.estadoProd!=='cancelado').flatMap(t=>t.equipo||[]),e=>e.persona||'Sin nombre',eqFalta);
  return `<div class="wrap"><h1 class="ttl">Reporte ${y}</h1>
  <div class="rtools"><select id="ranio" aria-label="Año">${[...ys].sort((a,b)=>b-a).map(v=>`<option${String(v)===y?' selected':''}>${v}</option>`).join('')}</select>${mons.length>1?`<select id="rmon" aria-label="Moneda">${opts([...(puedeTodo?[['TODO','Todo en soles (convertido)']]:[]),...mons.map(k=>[k,MONEDAS[k]||k])],todo?'TODO':m)}</select>`:''}</div>
@@ -541,6 +543,7 @@ function vReportes(){
   <div><small>Temas grabados</small><b>${nTem}</b><small>en ${nVid} ${nVid===1?'trabajo':'trabajos'} de ${y}</small></div>
   <div><small>Ganancia de los trabajos</small><b>${fmt(fact-prop,m)}</b><small>Facturado menos gastos de producción${eqY>0?' y equipo':''} (${fmt(prop,m)})</small></div>
   <div><small>Ganancia neta</small><b class="${fact-prop-totG<0?'red':''}">${fmt(fact-prop-totG,m)}</b><small>Menos gastos del negocio (${fmt(totG,m)})</small></div>
+  ${dTot>0?`<div><small>Descuentos otorgados</small><b>${fmt(dTot,m)}</b><small>en ${conD.length} ${conD.length===1?'trabajo':'trabajos'} (${Math.round(dTot/(dLis||1)*100)}% del precio de lista)${dMes.length?' · en '+MESL[+mesAct.slice(5)-1]+': '+fmt(r2(dMes.reduce((a,x)=>a+x.d,0)),m):''}</small></div>`:''}
   ${ret>0?`<div><small>Retenciones 4ta (8 %)</small><b>${fmt(ret,m)}</b><small>Pagos a cuenta para tu declaración anual</small></div>`:''}
  </div>
  <div class="rgrid">
@@ -597,7 +600,7 @@ function dTrabajo(id){
  ${nx&&cuenta(t)&&e!=='pagado'?`<p class="ahora">Ahora toca: <b>${esc(nx.concepto)}</b> · ${fmt(nx.tipo==='entrega'?sal:nx.falta,m)}${nx.vence?' · '+(nx.tipo==='entrega'&&!t.entregadoEl?'entrega ':nx.tipo==='adelanto'&&t.modoPago!=='plan'?'antes del ':'vence ')+fd(nx.vence):''}</p>`:''}
  ${m&&m!=='PEN'&&tcDe(m)>0&&cobrarT(t)>0?`<p class="hint">≈ ${fmt(aSoles(e==='pagado'||e==='cotizado'?cobrarT(t):sal,m),'PEN')} al tipo de cambio de ${S.aj.tcFecha?fd(S.aj.tcFecha):'hoy'} (S/ ${tcDe(m)} por ${m==='USD'?'dólar':m})</p>`:''}
  ${cuenta(t)&&cobrarT(t)>0?barra(t,'lg'):''}
- <dl class="kv">${nomArt(t)?`<div><dt>Artista o grupo</dt><dd style="white-space:normal">${esc(nomArt(t))}</dd></div>`:''}${temasTxt(t)?`<div><dt>Temas a grabar</dt><dd style="white-space:normal">${temasTxt(t)}${t.temasNom?'<br><span class="hint">'+esc(t.temasNom)+'</span>':''}</dd></div>`:''}<div><dt>Monto del trabajo</dt><dd>${fmt(tot,m)}</dd></div>${t.retencion?`<div><dt>Retención 4ta (8 %)</dt><dd>− ${fmt(retT(t),m)}</dd></div><div><dt>Neto a cobrar</dt><dd>${fmt(cobrarT(t),m)}</dd></div>`:''}${rb>0?`<div><dt>Gastos a reembolsar</dt><dd>+ ${fmt(rb,m)}</dd></div>`:''}<div><dt>Cobrado</dt><dd>${fmt(pg,m)}</dd></div><div><dt>Fecha del trabajo</dt><dd>${fd(t.fecha)||'—'}</dd></div><div><dt>${t.entregadoEl?'Entregado el':'Fecha de entrega'}</dt><dd>${fd(baseEntrega(t))||'—'}</dd></div><div><dt>Estado</dt><dd>${PROD[t.estadoProd]||'—'}</dd></div>${nDias(t)>1?`<div><dt>Rodaje · ${nDias(t)} días</dt><dd style="white-space:normal">${esc(textoDias(t,'\n')).replace(/\n/g,'<br>')}</dd></div>`:horario(t)?`<div><dt>Horario</dt><dd>${esc(horario(t))}</dd></div>`:''}${t.lugar?`<div><dt>Lugar</dt><dd style="white-space:normal">${esc(t.lugar)}</dd></div>`:''}</dl>
+ <dl class="kv">${nomArt(t)?`<div><dt>Artista o grupo</dt><dd style="white-space:normal">${esc(nomArt(t))}</dd></div>`:''}${temasTxt(t)?`<div><dt>Temas a grabar</dt><dd style="white-space:normal">${temasTxt(t)}${t.temasNom?'<br><span class="hint">'+esc(t.temasNom)+'</span>':''}</dd></div>`:''}<div><dt>Monto del trabajo</dt><dd>${fmt(tot,m)}</dd></div>${descuentoT(t)>0?`<div><dt>Precio de lista</dt><dd style="white-space:normal">${fmt(precioListaT(t),m)}<br><span class="hint">Descuento ${fmt(descuentoT(t),m)} (${Math.round(descuentoT(t)/precioListaT(t)*100)}%)${ocultaDesc(t.cot)?' · no sale en el PDF':''}</span></dd></div>`:''}${t.retencion?`<div><dt>Retención 4ta (8 %)</dt><dd>− ${fmt(retT(t),m)}</dd></div><div><dt>Neto a cobrar</dt><dd>${fmt(cobrarT(t),m)}</dd></div>`:''}${rb>0?`<div><dt>Gastos a reembolsar</dt><dd>+ ${fmt(rb,m)}</dd></div>`:''}<div><dt>Cobrado</dt><dd>${fmt(pg,m)}</dd></div><div><dt>Fecha del trabajo</dt><dd>${fd(t.fecha)||'—'}</dd></div><div><dt>${t.entregadoEl?'Entregado el':'Fecha de entrega'}</dt><dd>${fd(baseEntrega(t))||'—'}</dd></div><div><dt>Estado</dt><dd>${PROD[t.estadoProd]||'—'}</dd></div>${nDias(t)>1?`<div><dt>Rodaje · ${nDias(t)} días</dt><dd style="white-space:normal">${esc(textoDias(t,'\n')).replace(/\n/g,'<br>')}</dd></div>`:horario(t)?`<div><dt>Horario</dt><dd>${esc(horario(t))}</dd></div>`:''}${t.lugar?`<div><dt>Lugar</dt><dd style="white-space:normal">${esc(t.lugar)}</dd></div>`:''}</dl>
  ${tagsHtml(t)}
  ${calBloque(t)}
  ${e==='cotizado'&&cotLista(t)?`<p class="hint qenv">${cotEnviada(t)?`Enviada al cliente el ${fd(cotEnviada(t))}${diasDesde(cotEnviada(t))>=SEG_DIAS?' · <span class="red">sin respuesta</span>':''}. <button type="button" class="lnk" data-a="cotEnv" data-id="${id}">Quitar la marca</button>`:`Todavía no está marcada como enviada. <button type="button" class="lnk" data-a="cotEnv" data-id="${id}">Ya la envié</button>`}</p>`:''}
@@ -1240,18 +1243,35 @@ function calcPrecio(c,m){
   else{const v=alt?num(alt.precio):num(c.precio);L.push({c:(c.nombre||(c.servicio&&c.servicio!=='Servicios principales'?c.servicio:'Servicio'))+(alt?' – '+alt.nombre+(alt.detalle?' ('+alt.detalle+')':''):''),m:v});sub+=v;sub+=lineaCamaras(c,m,L)}
  }
  for(const o of (c.opcionales||[]).filter(o=>o.ok)){L.push({c:o.nombre,m:num(o.precio)});sub+=num(o.precio)}
+ sub+=lineaAdicional(c,L);
  const dm=c.descuento||{};let dd=0;
- if(num(dm.valor)>0){dd=Math.min(dm.tipo==='pct'?r2(sub*num(dm.valor)/100):r2(num(dm.valor)),sub);L.push({c:(dm.motivo||'Descuento especial')+(dm.tipo==='pct'?` (−${num(dm.valor)}%)`:''),m:-dd,desc:1})}
+ if(num(dm.valor)>0){dd=Math.min(dm.tipo==='pct'?r2(sub*num(dm.valor)/100):r2(num(dm.valor)),sub);L.push({c:(dm.motivo||'Descuento especial')+(dm.tipo==='pct'?` (−${num(dm.valor)}%)`:''),m:-dd,desc:1,esp:1})}
  const total=r2(Math.max(0,sub-dd)),regular=r2(L.filter(x=>!x.desc).reduce((a,x)=>a+x.m,0));
- return {lineas:L,total,regular,ahorro:r2(regular-total),pendiente:L.some(x=>x.pend)};
+ return {lineas:L,total,regular,ahorro:r2(regular-total),pendiente:L.some(x=>x.pend),ocultoPdf:ocultaDesc(c)};
 }
 function calcPaquete(c,m){
  const L=[];let sub=0;
  (c.partes||[]).forEach((p,i)=>{const r=calcPrecio(p,m);L.push({c:`${i+1}. ${tituloParte(p)}`,m:r.total,parte:i,ahorro:r.ahorro});sub+=r.total});
+ sub+=lineaAdicional(c,L);
  const dm=c.descuento||{};let dd=0;
- if(num(dm.valor)>0){dd=Math.min(dm.tipo==='pct'?r2(sub*num(dm.valor)/100):r2(num(dm.valor)),sub);L.push({c:(dm.motivo||'Descuento por paquete')+(dm.tipo==='pct'?` (−${num(dm.valor)}%)`:''),m:-dd,desc:1})}
+ if(num(dm.valor)>0){dd=Math.min(dm.tipo==='pct'?r2(sub*num(dm.valor)/100):r2(num(dm.valor)),sub);L.push({c:(dm.motivo||'Descuento por paquete')+(dm.tipo==='pct'?` (−${num(dm.valor)}%)`:''),m:-dd,desc:1,esp:1})}
  const ahorroPartes=L.reduce((a,x)=>a+(x.ahorro||0),0),total=r2(Math.max(0,sub-dd));
- return {lineas:L,total,ahorro:r2(ahorroPartes+dd),pendiente:(c.partes||[]).some(p=>calcPrecio(p,m).pendiente)};
+ return {lineas:L,total,ahorro:r2(ahorroPartes+dd),pendiente:(c.partes||[]).some(p=>calcPrecio(p,m).pendiente),ocultoPdf:ocultaDesc(c)};
+}
+// Monto pactado mayor que el precio de lista: la diferencia va como "Adicional"
+function lineaAdicional(c,L){const a=c.adicional;if(!a||!(num(a.monto)>0))return 0;L.push({c:a.motivo||'Adicional',m:r2(num(a.monto))});return r2(num(a.monto))}
+// El descuento especial (o por paquete) no sale en el PDF salvo que se marque "Mostrar el descuento en el PDF"
+const ocultaDesc=c=>!!c&&num((c.descuento||{}).valor)>0&&!c.descPdf;
+// Precio de lista = lo que calcula la app sin el descuento especial ni el adicional
+function precioListaT(t){const c=t&&t.cot,m=(t&&t.moneda)||'PEN';if(!c)return 0;const sin={...c,descuento:{tipo:'monto',valor:0,motivo:''},adicional:null};
+ if(c.modo==='paquete'&&(c.partes||[]).length)return calcPaquete(sin,m).total;if(c.modo==='modelo')return calcPrecio(sin,m).total;return 0}
+function descuentoT(t){const L=precioListaT(t),d=r2(L-num(t.total));return L>0&&d>0.004?d:0}
+// Para el PDF: si el descuento no se muestra, se ve solo el precio final
+function precioPdf(p,m,valor){const r=calcPrecio(p,m);if(valor==null&&!ocultaDesc(p))return r;const v=valor==null?r.total:valor;return {lineas:[{c:tituloParte(p),m:v}],total:v,ahorro:0,pendiente:r.pendiente}}
+function precioPdfPaquete(c,m){const r=calcPaquete(c,m);if(!ocultaDesc(c))return {r,partes:null};
+ const sumas=(c.partes||[]).map(p=>calcPrecio(p,m).total),suma=sumas.reduce((a,b)=>a+b,0)||1;let acc=0;
+ const vals=sumas.map((x,i)=>{if(i===sumas.length-1)return r2(r.total-acc);const v=r2(x*r.total/suma);acc+=v;return v});
+ return {r:{lineas:(c.partes||[]).map((p,i)=>({c:`${i+1}. ${tituloParte(p)}`,m:vals[i]})),total:r.total,ahorro:0,pendiente:r.pendiente},partes:vals};
 }
 // Cámaras: cada cámara cuesta precioCamara (las primeras camarasIncl van sin costo)
 function lineaCamaras(c,m,L){const k=parseInt(c.camaras,10)||0,pc=num(c.precioCamara),inc=parseInt(c.camarasIncl,10)||0,cob=Math.max(0,k-inc);if(!(pc>0)||!cob)return 0;L.push({c:`${inc?cob+' '+(cob===1?'cámara adicional':'cámaras adicionales'):camTxt(c)} × ${fmtR(pc,m)}`,m:r2(pc*cob)});return r2(pc*cob)}
@@ -1259,7 +1279,7 @@ const temasDePartes=ps=>(ps||[]).filter(p=>p.precioModo==='porTema').reduce((a,p
 const totModelo=c=>c.modo==='paquete'?calcPaquete(c,'PEN').total:calcPrecio(c,'PEN').total;
 function tituloParte(p){const md=modelos().find(x=>x.id===p.modelo);const nom=p.nombre||(md&&md.nombre)||'Servicio';if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return nom+' · '+n+' '+uniTxt(p,n)+(p.camaras?' · '+camTxt(p):'')}const alt=(p.alternativas||[]).find(a=>a.id===p.alt);return nom+(alt?' · '+alt.nombre:'')}
 function textoPartes(c){const xs=(c.partes||[]).map(p=>{const md=modelos().find(x=>x.id===p.modelo),nom=(p.nombre||(md&&md.nombre)||'servicio').toLowerCase();if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return p.modelo==='videoclip'?(n===1?'1 video musical':n+' videos musicales'):nom+' de '+n+' '+uniTxt(p,n)}return nom});return xs.length>1?xs.slice(0,-1).join(', ')+' y '+xs[xs.length-1]:(xs[0]||'')}
-function htmlDesglose(r,m){return `<table class="desg"><tbody>${r.lineas.map(x=>`<tr class="${x.desc?'dsc':''}"><td>${esc(x.c)}</td><td>${x.m<0?'−'+fmtR(-x.m,m):fmtR(x.m,m)}</td></tr>`).join('')}<tr class="tot"><td>Total${r.pendiente?' (falta elegir opción)':''}</td><td>${fmtR(r.total,m)}</td></tr>${r.ahorro>0.004?`<tr class="aho"><td colspan="2">El cliente ahorra ${fmtR(r.ahorro,m)}</td></tr>`:''}</tbody></table>`}
+function htmlDesglose(r,m){return `<table class="desg"><tbody>${r.lineas.map(x=>`<tr class="${x.desc?'dsc':''}"><td>${esc(x.c)}${x.esp&&r.ocultoPdf?' <small class="nopdf">· no sale en el PDF</small>':''}</td><td>${x.m<0?'−'+fmtR(-x.m,m):fmtR(x.m,m)}</td></tr>`).join('')}<tr class="tot"><td>Total${r.pendiente?' (falta elegir opción)':''}</td><td>${fmtR(r.total,m)}</td></tr>${r.ahorro>0.004?`<tr class="aho"><td colspan="2">El cliente ahorra ${fmtR(r.ahorro,m)}</td></tr>`:''}</tbody></table>`}
 
 // Cotización nueva a partir de un modelo y los datos del trabajo
 function cotDesdeModelo(md,t,cantidad){
@@ -1319,8 +1339,9 @@ function htmlEditorCot(c,t,m,modo){
     <p class="hint" id="ce-trh"></p>
    </div>
   </div>
-  ${enTrabajo?`<label>Descuento especial <span class="hint" style="font-weight:400">(opcional, sale en el PDF)</span></label>
+  ${enTrabajo?`<label>Descuento especial <span class="hint" style="font-weight:400">(opcional)</span></label>
   <div class="g3 dsc3"><select name="dTipo" aria-label="Tipo de descuento">${opts([['monto',m==='PEN'?'S/':m],['pct','%']],dm.tipo||'monto')}</select><input name="dValor" inputmode="decimal" aria-label="Descuento" value="${esc(num(dm.valor)||'')}" placeholder="0"><input name="dMotivo" aria-label="Motivo del descuento" value="${esc(dm.motivo||'')}" placeholder="Motivo: cliente frecuente…"></div>
+  <label class="chk"><input type="checkbox" name="dVer"${c.descPdf?' checked':''}> Mostrar el descuento en el PDF</label>
   <div id="ce-desg"></div>`:''}
   <label for="ce-ser">Título de los servicios</label><input id="ce-ser" name="servicio" value="${esc(c.servicio||'Servicios principales')}">
   ${ta('incluye','Qué incluye (uno por línea)',c.incluye,5)}
@@ -1395,7 +1416,7 @@ function leerEditorCot(s,c0){
  if(F.has('camaras'))n.camaras=Math.max(1,parseInt(F.get('camaras'),10)||1);
  if(F.has('precioCamara'))n.precioCamara=r2(num(F.get('precioCamara')));
  if(F.has('camarasIncl'))n.camarasIncl=Math.max(0,parseInt(F.get('camarasIncl'),10)||0);
- if(F.has('dValor'))n.descuento={tipo:g('dTipo')||'monto',valor:r2(num(F.get('dValor'))),motivo:g('dMotivo')};
+ if(F.has('dValor')){n.descuento={tipo:g('dTipo')||'monto',valor:r2(num(F.get('dValor'))),motivo:g('dMotivo')};n.descPdf=F.has('dVer')}
  if(n.modo!=='paquete')n.modo='modelo';
  return n;
 }
@@ -1452,30 +1473,49 @@ function fCot(id){const t=S.trabajos.find(x=>x.id===id);if(!t)return;if(t.cot&&t
 function htmlServicios(t){
  const c=t.cot,tiene=c&&(c.modo==='modelo'||(c.modo==='paquete'&&(c.partes||[]).length));
  return `<details class="srvd"${tiene?' open':''}><summary>Calcular el monto con servicios o paquete</summary>
-  <p class="hint" style="margin-top:4px">Elige uno o varios servicios (por ejemplo 2 videoclips + una sesión en vivo de 3 canciones). Se aplican los precios y descuentos de tus modelos y el monto total se llena solo.</p>
+  <p class="hint" style="margin-top:4px">Elige uno o varios servicios (por ejemplo 2 videoclips + una sesión en vivo de 3 canciones). Se aplican los precios y descuentos de tus modelos y el monto total se llena solo. Si pactaste otro precio, cambia el monto total: la diferencia queda como descuento.</p>
   <div id="srv"></div>
   <div class="chips presets srvadd">${modelos().map(x=>`<button type="button" class="chip" data-srv="${esc(x.id)}">+ ${esc(x.nombre)}</button>`).join('')}</div>
-  <div id="srvpq" hidden><label>Descuento por paquete</label><div class="g3 dsc3"><select data-pq="tipo" aria-label="Tipo de descuento"><option value="monto">S/</option><option value="pct">%</option></select><input data-pq="valor" inputmode="decimal" aria-label="Descuento por paquete" placeholder="0"><input data-pq="motivo" aria-label="Motivo" value="Descuento por paquete"></div></div>
+  <div id="srvpq" hidden><label id="srvpql">Descuento por paquete</label><div class="g3 dsc3"><select data-pq="tipo" aria-label="Tipo de descuento"><option value="monto">S/</option><option value="pct">%</option></select><input data-pq="valor" inputmode="decimal" aria-label="Descuento" placeholder="0"><input data-pq="motivo" aria-label="Motivo" value="Descuento por paquete"></div>
+   <label class="chk"><input type="checkbox" data-pq="ver"> Mostrar el descuento en el PDF</label><p class="hint" id="srvpqh"></p></div>
+  <div id="srvad" hidden><label class="chk"><input type="checkbox" data-ad="on" checked> Agregar la diferencia como adicional en la cotización</label><div class="g2"><input data-ad="monto" inputmode="decimal" aria-label="Monto adicional"><input data-ad="motivo" aria-label="Concepto del adicional" value="Adicional"></div><p class="hint" id="srvadh"></p></div>
   <div id="srvtot"></div>
   <p class="hint">Para cambiar textos o precios solo para este cliente, usa “Armar cotización” en el trabajo.</p>
  </details>`;
 }
 function montarServicios(s,t0){
- const c0=t0.cot,box=s.querySelector('#srv'),fo=s.querySelector('#fo'),ftm=s.querySelector('#ftm'),pqBox=s.querySelector('#srvpq'),tot=s.querySelector('#srvtot');
+ const c0=t0.cot,box=s.querySelector('#srv'),fo=s.querySelector('#fo'),ftm=s.querySelector('#ftm'),pqBox=s.querySelector('#srvpq'),tot=s.querySelector('#srvtot'),adBox=s.querySelector('#srvad');
  if(!box)return {aplicar:()=>{}};
- let filas=c0&&c0.modo==='paquete'?(c0.partes||[]).map(p=>textosActuales(JSON.parse(JSON.stringify(p)))):c0&&c0.modo==='modelo'?[textosActuales(JSON.parse(JSON.stringify(c0)))]:[];
- let tocado=false;
- const dm=c0&&c0.modo==='paquete'?c0.descuento||{}:{};
- pqBox.querySelector('[data-pq=tipo]').value=dm.tipo||'monto';pqBox.querySelector('[data-pq=valor]').value=num(dm.valor)||'';if(dm.motivo)pqBox.querySelector('[data-pq=motivo]').value=dm.motivo;
+ const esMod=c0&&c0.modo==='modelo',esPaq=c0&&c0.modo==='paquete';
+ let filas=esPaq?(c0.partes||[]).map(p=>textosActuales(JSON.parse(JSON.stringify(p)))):esMod?[textosActuales(JSON.parse(JSON.stringify(c0)))]:[];
+ // el descuento especial (un servicio) o por paquete (varios) se maneja aquí, aparte de cada servicio
+ if(esMod){filas[0].descuento={tipo:'monto',valor:0,motivo:''};delete filas[0].adicional;delete filas[0].descPdf}
+ let tocado=false,llenando=false;
+ const dm=esMod||esPaq?c0.descuento||{}:{},ad0=esMod||esPaq?c0.adicional:null;
+ const q=k=>pqBox.querySelector(`[data-pq=${k}]`),qa=k=>adBox.querySelector(`[data-ad=${k}]`);
+ const MOT=['Descuento por paquete','Descuento especial'],motDef=()=>filas.length>1?MOT[0]:MOT[1];
+ q('tipo').value=dm.tipo||'monto';q('valor').value=num(dm.valor)||'';q('motivo').value=dm.motivo||motDef();q('ver').checked=!!(c0&&c0.descPdf);
+ if(ad0&&num(ad0.monto)>0){adBox.hidden=false;qa('monto').value=num(ad0.monto);qa('motivo').value=ad0.motivo||'Adicional'}
  const mon=()=>(s.querySelector('#fm')||{}).value||'PEN';
- const descPq=()=>({tipo:pqBox.querySelector('[data-pq=tipo]').value,valor:r2(num(pqBox.querySelector('[data-pq=valor]').value)),motivo:pqBox.querySelector('[data-pq=motivo]').value.trim()||'Descuento por paquete'});
+ const descPq=()=>({tipo:q('tipo').value,valor:r2(num(q('valor').value)),motivo:q('motivo').value.trim()||motDef()});
+ const adicion=()=>!adBox.hidden&&qa('on').checked&&num(qa('monto').value)>0?{monto:r2(num(qa('monto').value)),motivo:qa('motivo').value.trim()||'Adicional'}:null;
+ const conD=(d,a)=>filas.length>1?calcPaquete({partes:filas,descuento:d,adicional:a,descPdf:q('ver').checked},mon()):filas.length?calcPrecio({...filas[0],descuento:d,adicional:a,descPdf:q('ver').checked},mon()):null;
+ const lista=()=>{const r=conD({tipo:'monto',valor:0},null);return r?r.total:0};
  const fila=(p,i)=>{const md=modelos().find(x=>x.id===p.modelo)||{},pt=p.precioModo==='porTema',alts=p.alternativas||[];
   return `<div class="svrow" data-i="${i}"><select data-f="mod" aria-label="Servicio ${i+1}">${modelos().map(x=>`<option value="${esc(x.id)}"${x.id===p.modelo?' selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
    ${pt?`<label class="svn"><input data-f="n" type="number" min="1" step="1" inputmode="numeric" aria-label="Cantidad" value="${Math.max(1,parseInt(p.cantidad,10)||1)}"><span>${esc(uniTxt(p,2))}</span></label>`:alts.length?`<select data-f="alt" aria-label="Opción">${[['','Elegir opción…'],...alts.map(a=>[a.id,a.nombre+' · '+fmtR(num(a.precio),mon())])].map(([v,l])=>`<option value="${esc(v)}"${p.alt===v?' selected':''}>${esc(l)}</option>`).join('')}</select>`:'<span class="hint">Precio fijo</span>'}
    ${p.camaras!=null?`<label class="svn svc"><input data-f="cam" type="number" min="1" max="20" step="1" inputmode="numeric" aria-label="Número de cámaras" value="${parseInt(p.camaras,10)||1}"><span>cám.</span></label>`:''}
    <b class="svs">${fmt(calcPrecio(p,mon()).total,mon())}</b><button type="button" class="x sm" data-f="del" aria-label="Quitar servicio">×</button></div>`};
- const calc=()=>filas.length>1||num(descPq().valor)>0?calcPaquete({partes:filas,descuento:descPq()},mon()):filas.length?calcPrecio(filas[0],mon()):null;
- const pinta=()=>{box.innerHTML=filas.map(fila).join('');pqBox.hidden=filas.length<2;actualiza(false)};
+ const calc=()=>conD(descPq(),adicion());
+ const vis=()=>{const v=q('motivo').value.trim();if(!v||MOT.includes(v))q('motivo').value=motDef();
+  pqBox.hidden=!filas.length||(filas.length<2&&!(num(q('valor').value)>0));s.querySelector('#srvpql').textContent=filas.length>1?'Descuento por paquete':'Descuento especial';if(!filas.length)adBox.hidden=true};
+ const pinta=()=>{box.innerHTML=filas.map(fila).join('');vis();actualiza(false)};
+ // Monto escrito a mano: la diferencia con el precio de lista queda como descuento (o como adicional si es mayor)
+ const deMonto=()=>{const L=lista(),v=num(fo.value);if(!filas.length||!(v>0)||!(L>0))return;const d=r2(L-v);
+  if(d>0.004){q('tipo').value='monto';q('valor').value=d;adBox.hidden=true}
+  else if(d<-0.004){q('valor').value='';adBox.hidden=false;qa('monto').value=-d;qa('on').checked=true}
+  else{q('valor').value='';adBox.hidden=true}
+  tocado=true;vis();actualiza(false)};
  const hTem=(()=>{if(!ftm)return null;let h=s.querySelector('#ftmh');if(!h){h=document.createElement('p');h.id='ftmh';h.className='hint';ftm.closest('.g2').insertAdjacentElement('afterend',h)}return h})();
  const sincTemas=()=>{if(!ftm)return;const pt=filas.filter(p=>p.precioModo==='porTema');
   if(!pt.length){ftm.readOnly=false;if(hTem)hTem.textContent='';return}
@@ -1484,7 +1524,10 @@ function montarServicios(s,t0){
  const actualiza=(llenar)=>{sincTemas();
   box.querySelectorAll('.svrow').forEach((r,i)=>{const b=r.querySelector('.svs');if(b&&filas[i])b.textContent=fmt(calcPrecio(filas[i],mon()).total,mon())});
   const r=calc();tot.innerHTML=r?htmlDesglose(r,mon()):'';
-  if(r&&llenar&&r.total>0){fo.value=r.total;fo.dispatchEvent(new Event('input',{bubbles:true}))}};
+  const L=lista(),dd=r?r2(L+((adicion()||{}).monto||0)-r.total):0,h=s.querySelector('#srvpqh');
+  if(h)h.textContent=r&&dd>0.004?`Precio de lista ${fmtR(L,mon())} · pactado ${fmtR(r.total,mon())} · descuento de ${fmtR(dd,mon())} (${Math.round(dd/L*100)}%).`+(q('ver').checked?'':' El PDF muestra solo el total.'):'';
+  const ha=s.querySelector('#srvadh');if(ha)ha.textContent=adBox.hidden?'':qa('on').checked?`El monto pactado es mayor que el precio de lista (${fmtR(L,mon())}); la diferencia sale en la cotización.`:`La cotización quedará en ${fmtR(L,mon())} aunque el trabajo sea por más.`;
+  if(r&&llenar&&r.total>0){llenando=true;fo.value=r.total;fo.dispatchEvent(new Event('input',{bubbles:true}));llenando=false}};
  const cambiar=()=>{tocado=true;actualiza(true)};
  box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1)}if(e.target.dataset.f==='cam')filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);cambiar()});
  box.addEventListener('change',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;
@@ -1494,19 +1537,23 @@ function montarServicios(s,t0){
  s.querySelector('.srvadd').addEventListener('click',e=>{const b=e.target.closest('[data-srv]');if(!b)return;const md=modelos().find(x=>x.id===b.dataset.srv);if(!md)return;
   const temas=parseInt(ftm&&ftm.value,10)||0;filas.push(cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},filas.length===0&&temas>0?temas:1));tocado=true;pinta();actualiza(true);
   const n=box.querySelector('.svrow:last-child [data-f=n]');n&&n.focus()});
- pqBox.addEventListener('input',cambiar);pqBox.addEventListener('change',cambiar);
+ pqBox.addEventListener('input',e=>{if(e.target.dataset.pq==='ver'){tocado=true;actualiza(false)}else cambiar()});pqBox.addEventListener('change',e=>{if(e.target.dataset.pq==='ver'){tocado=true;actualiza(false)}else cambiar()});
+ adBox.addEventListener('input',e=>{tocado=true;if(e.target.dataset.ad==='on')actualiza(false);else actualiza(true)});adBox.addEventListener('change',e=>{tocado=true;actualiza(e.target.dataset.ad!=='on')});
+ fo.addEventListener('input',()=>{if(!llenando)deMonto()});
  if(ftm)ftm.addEventListener('input',()=>{const pt=filas.filter(p=>p.precioModo==='porTema');if(pt.length===1){const f0=pt[0];const v=parseInt(ftm.value,10)||0;if(v>0){f0.cantidad=v;const k=filas.indexOf(f0);const n=box.querySelectorAll('.svrow')[k]&&box.querySelectorAll('.svrow')[k].querySelector('[data-f=n]');if(n)n.value=v;tocado=true;actualiza(true)}return}if(filas.length===1&&filas[0].precioModo==='porTema'){const v=parseInt(ftm.value,10)||0;if(v>0){filas[0].cantidad=v;const n=box.querySelector('[data-f=n]');if(n)n.value=v;cambiar()}}});
  s.querySelector('#fm')&&s.querySelector('#fm').addEventListener('change',()=>actualiza(false));
  pinta();
+ // Si el monto guardado no coincide con lo que calcula la cotización (se cambió a mano antes), se toma como pactado
+ if(filas.length&&num(fo.value)>0){const r=calc();if(r&&Math.abs(r.total-num(fo.value))>0.004)deMonto()}
  return {aplicar(t){
   if(!tocado||!filas.length)return;
-  const prev=t.cot||{},dq=descPq();
-  if(filas.length===1&&!(num(dq.valor)>0)){const p=filas[0];
-   t.cot={...(prev.modo==='modelo'?prev:{}),...p,modo:'modelo',num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
+  const prev=t.cot||{},dq=descPq(),ad=adicion(),ver=q('ver').checked;
+  if(filas.length===1){const p=filas[0];
+   t.cot={...(prev.modo==='modelo'?prev:{}),...p,modo:'modelo',descuento:dq,adicional:ad,descPdf:ver,num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
    if(p.precioModo==='porTema')t.temas=Math.max(1,parseInt(p.cantidad,10)||1)}
   else{const pt=filas.filter(p=>p.precioModo==='porTema');if(pt.length)t.temas=pt.reduce((a,p)=>a+Math.max(1,parseInt(p.cantidad,10)||1),0)}
-  if(filas.length>1||num(dq.valor)>0)t.cot={...(prev.modo==='paquete'?prev:{titulo:'Cotización – Paquete de producción audiovisual',etiqueta:filas[0].etiqueta||'Cliente',ciudad:filas[0].ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',consideraciones:filas[0].consideraciones||[],pago:filas[0].pago||[]}),
-   modo:'paquete',partes:filas.map(p=>{const q={...p,modo:'modelo'};delete q.num;delete q.emitida;delete q.valida;return q}),descuento:dq,num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
+  if(filas.length>1)t.cot={...(prev.modo==='paquete'?prev:{titulo:'Cotización – Paquete de producción audiovisual',etiqueta:filas[0].etiqueta||'Cliente',ciudad:filas[0].ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',consideraciones:filas[0].consideraciones||[],pago:filas[0].pago||[]}),
+   modo:'paquete',partes:filas.map(p=>{const q={...p,modo:'modelo'};delete q.num;delete q.emitida;delete q.valida;return q}),descuento:dq,adicional:ad,descPdf:ver,num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
  }};
 }
 /* ---------- paquete: varios servicios en una sola cotización ---------- */
@@ -1521,6 +1568,7 @@ function fPaquete(id){
   <label>Agregar servicio</label><div class="chips presets pqadd">${modelos().map(x=>`<button type="button" class="chip" data-addp="${esc(x.id)}">+ ${esc(x.nombre)}</button>`).join('')}</div>
   <label>Descuento por paquete <span class="hint" style="font-weight:400">(además de los descuentos de cada parte)</span></label>
   <div class="g3 dsc3"><select name="dTipo" aria-label="Tipo de descuento">${opts([['monto',m==='PEN'?'S/':m],['pct','%']],dm.tipo||'monto')}</select><input name="dValor" inputmode="decimal" aria-label="Descuento" value="${esc(num(dm.valor)||'')}" placeholder="0"><input name="dMotivo" aria-label="Motivo" value="${esc(dm.motivo||'Descuento por paquete')}"></div>
+  <label class="chk"><input type="checkbox" name="dVer"${c.descPdf?' checked':''}> Mostrar el descuento en el PDF</label>
   <div id="pq-desg"></div>
   <label for="pq-tit">Título del documento</label><input id="pq-tit" name="titulo" value="${esc(c.titulo||'')}">
   <div class="g2"><div><label for="pq-eti">Se dirige a</label><select id="pq-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div><div><label for="pq-ciu">Ciudad</label><input id="pq-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div></div>
@@ -1535,7 +1583,7 @@ function fPaquete(id){
   <p class="err" id="pq-err" role="alert"></p>
   <div class="acts"><button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div></form>`,{mount:s=>{
   const F=s.querySelector('form');
-  const leer=()=>{const D=new FormData(F),g=k=>String(D.get(k)??'').trim();return {...S.trabajos.find(x=>x.id===id).cot,titulo:g('titulo'),etiqueta:g('etiqueta')||'Cliente',ciudad:g('ciudad'),intro:g('intro'),consideraciones:lineas(D.get('consideraciones')),pago:lineas(D.get('pago')),descuento:{tipo:g('dTipo')||'monto',valor:r2(num(D.get('dValor'))),motivo:g('dMotivo')||'Descuento por paquete'},emitida:D.get('emitida')||hoy(),valida:D.get('valida')||''}};
+  const leer=()=>{const D=new FormData(F),g=k=>String(D.get(k)??'').trim();return {...S.trabajos.find(x=>x.id===id).cot,titulo:g('titulo'),etiqueta:g('etiqueta')||'Cliente',ciudad:g('ciudad'),intro:g('intro'),consideraciones:lineas(D.get('consideraciones')),pago:lineas(D.get('pago')),descuento:{tipo:g('dTipo')||'monto',valor:r2(num(D.get('dValor'))),motivo:g('dMotivo')||'Descuento por paquete'},descPdf:D.has('dVer'),emitida:D.get('emitida')||hoy(),valida:D.get('valida')||''}};
   const pinta=()=>{const n=leer();s.querySelector('#pq-desg').innerHTML=htmlDesglose(calcPaquete(n,m),m);s.querySelector('#pq-prev').innerHTML='<b>Así se verá:</b> '+esc(ponerDatos(n.intro,t,n))};
   pinta();F.addEventListener('input',pinta);F.addEventListener('change',pinta);
   // guarda lo escrito antes de ir a otra pantalla
@@ -1697,7 +1745,7 @@ function dibujarCotModelo(d,t,logo){
   if((p.opcionales||[]).length){titulo('Opcionales (costo adicional)');
    p.opcionales.forEach(o=>{d.setFont('helvetica','normal');d.setFontSize(10.5);const ls=d.splitTextToSize(pdfTxt(o.nombre),CW-(o.ok?200:120));salto(ls.length*15+8);d.setFillColor(...ROSA);d.circle(M+3,y-3.4,1.7,'F');ls.forEach((l,i)=>{d.setTextColor(...TINTA);d.setFont('helvetica','normal');d.setFontSize(10.5);d.text(l,M+14,y+i*15)});txt(fmtR(num(o.precio),m),W-M,y,{s:10.5,b:1,r:1});if(o.ok)txt('INCLUIDO',W-M-82,y,{s:8,b:1,c:ROSA,r:1});y+=ls.length*15+4});
    if(p.notaOpc){y+=2;parrafo('* '+p.notaOpc,{s:9,i:1,c:GRIS})}y+=4}
-  const r=calcPrecio(p,m);
+  const r=precioPdf(p,m,nro!=null&&valsPaq?valsPaq[nro-1]:null);
   if(!(alts.length&&p.precioModo!=='porTema'&&!p.alt&&!(p.opcionales||[]).some(o=>o.ok)&&!num((p.descuento||{}).valor))){titulo(nro!=null?'Precio de este servicio':'Inversión');tablaPrecio(r,nro!=null?'Subtotal':'Total')}
   (p.secciones||[]).forEach(sc=>{titulo(sc.titulo||'');const ls=pd(sc.texto).split('\n');let bl=[];const vaciar=()=>{if(bl.length){vinetas(bl);bl=[]}};
    ls.forEach(l=>{if(/^\s*[•·\-*]\s+/.test(l))bl.push(l.replace(/^\s*[•·\-*]\s+/,''));else if(l.trim()){vaciar();parrafo(l);y+=3}});vaciar()});
@@ -1712,9 +1760,9 @@ function dibujarCotModelo(d,t,logo){
  const cw2=(CW-20)/2;
  for(let i=0;i<datos.length;i+=2){let alto=0;[0,1].forEach(k=>{const it=datos[i+k];if(!it)return;const X=M+k*(cw2+20);txt(String(it[0]).toUpperCase(),X,y,{s:7.5,c:GRIS});d.setFont('helvetica','bold');d.setFontSize(11);const ls=d.splitTextToSize(pdfTxt(it[1]),cw2);d.setTextColor(...TINTA);d.text(ls,X,y+14);alto=Math.max(alto,ls.length)});y+=22+13*alto}
  if(c.intro){y+=4;parrafo(ponerDatos(c.intro,t,c),{c:[55,62,70]})}
- let totalFinal;
+ let totalFinal,valsPaq=null;
  if(esPaq){
-  const r=calcPaquete(c,m);totalFinal=r.total;
+  const pv=precioPdfPaquete(c,m),r=pv.r;valsPaq=pv.partes;totalFinal=r.total;
   titulo('Resumen del paquete');tablaPrecio(r,'Total del paquete');
   (c.partes||[]).forEach((p,i)=>servicio(p,i+1));
   if((c.consideraciones||[]).length){titulo('Consideraciones');vinetas(c.consideraciones)}
