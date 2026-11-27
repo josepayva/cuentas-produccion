@@ -1140,7 +1140,7 @@ const MSG_COT_DEF='Hola {nombre}, ¿cómo estás? Te envío la cotización {nume
 // Cómo se cobra cada modelo: precio fijo o por tema (con monto base y descuento por cantidad)
 const PRECIO_DEF={
  videoclip:{precioModo:'porTema',precio:2500,precioBase:0,unidad:{s:'video musical',p:'videos musicales'},escala:{tipo:'pct',tramos:[{desde:2,valor:15},{desde:3,valor:20}]}},
- envivo:{camaras:5,precioCamara:500,camarasIncl:0,precioModo:'porTema',precio:300,precioBase:1500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
+ envivo:{camaras:5,precioCamara:500,camarasIncl:2,precioModo:'porTema',precio:300,precioBase:1500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
  boda:{precioModo:'fijo',escala:{tipo:'ninguna',tramos:[]}}};
 MODELOS_DEF.forEach(x=>Object.assign(x,PRECIO_DEF[x.id]||{}));
 const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>textosActuales({...(x.precioModo?{}:PRECIO_DEF[x.id]||{}),...x,modelo:x.id})):MODELOS_DEF;
@@ -1157,6 +1157,7 @@ const txtActual=x=>{let v=String(x||'');for(const [a,b] of TXT_VIEJO)v=v.split(a
 function textosActuales(c){if(!c)return c;const n={...c,intro:introActual(c.intro),incluye:(c.incluye||[]).map(txtActual),secciones:(c.secciones||[]).map(x=>({...x,texto:txtActual(x.texto)}))};
  if(n.camaras==null&&(n.modelo==='envivo'||n.incluye.some(x=>x.includes('{camaras}'))))n.camaras=5;
  if(n.camaras!=null&&n.precioCamara==null&&n.modelo==='envivo')n.precioCamara=500;
+ if(n.camaras!=null&&n.camarasIncl==null&&n.modelo==='envivo')n.camarasIncl=2;
  if(n.partes)n.partes=n.partes.map(textosActuales);return n}
 const cantDe=(c,t)=>Math.max(0,parseInt(c&&c.cantidad,10)||parseInt(t&&t.temas,10)||0);
 // Los nombres de los temas del trabajo solo se usan si la cantidad coincide (en un paquete cada parte tiene la suya)
@@ -1206,6 +1207,7 @@ function calcPaquete(c,m){
 }
 // Cámaras: cada cámara cuesta precioCamara (las primeras camarasIncl van sin costo)
 function lineaCamaras(c,m,L){const k=parseInt(c.camaras,10)||0,pc=num(c.precioCamara),inc=parseInt(c.camarasIncl,10)||0,cob=Math.max(0,k-inc);if(!(pc>0)||!cob)return 0;L.push({c:`${inc?cob+' '+(cob===1?'cámara adicional':'cámaras adicionales'):camTxt(c)} × ${fmtR(pc,m)}`,m:r2(pc*cob)});return r2(pc*cob)}
+const temasDePartes=ps=>(ps||[]).filter(p=>p.precioModo==='porTema').reduce((a,p)=>a+Math.max(1,parseInt(p.cantidad,10)||1),0);
 const totModelo=c=>c.modo==='paquete'?calcPaquete(c,'PEN').total:calcPrecio(c,'PEN').total;
 function tituloParte(p){const md=modelos().find(x=>x.id===p.modelo);const nom=p.nombre||(md&&md.nombre)||'Servicio';if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return nom+' · '+n+' '+uniTxt(p,n)+(p.camaras?' · '+camTxt(p):'')}const alt=(p.alternativas||[]).find(a=>a.id===p.alt);return nom+(alt?' · '+alt.nombre:'')}
 function textoPartes(c){const xs=(c.partes||[]).map(p=>{const md=modelos().find(x=>x.id===p.modelo),nom=(p.nombre||(md&&md.nombre)||'servicio').toLowerCase();if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return p.modelo==='videoclip'?(n===1?'1 video musical':n+' videos musicales'):nom+' de '+n+' '+uniTxt(p,n)}return nom});return xs.length>1?xs.slice(0,-1).join(', ')+' y '+xs[xs.length-1]:(xs[0]||'')}
@@ -1383,7 +1385,7 @@ function fCotModelo(id,modeloId,parte){
   F.addEventListener('submit',async e=>{e.preventDefault();
    const n={...leerEditorCot(s,c),modelo:md.id},D=new FormData(F),r=calcPrecio(n,m);
    if(!(r.total>0)){err.textContent=n.precioModo==='porTema'?'Escribe el precio por '+uniTxt(n,1)+'.':'Escribe el precio total.';return}
-   if(esParte){await mutT(id,x=>{x.cot.partes[parte]={...n,modo:'modelo',nombre:n.nombre||md.nombre}});toast('Parte guardada.');fPaquete(id);return}
+   if(esParte){await mutT(id,x=>{x.cot.partes[parte]={...n,modo:'modelo',nombre:n.nombre||md.nombre};const tp=temasDePartes(x.cot.partes);if(tp)x.temas=tp});toast('Parte guardada.');fPaquete(id);return}
    const emi=D.get('emitida')||hoy();
    const cot={...n,num:(prev&&prev.num)||(t.cot&&t.cot.num)||sigNumCot(emi.slice(0,4)),emitida:emi,valida:D.get('valida')||''};
    const usar=!!D.get('usarTotal')&&r.total>0,ir=e.submitter&&e.submitter.value;
@@ -1425,12 +1427,17 @@ function montarServicios(s,t0){
    <b class="svs">${fmt(calcPrecio(p,mon()).total,mon())}</b><button type="button" class="x sm" data-f="del" aria-label="Quitar servicio">×</button></div>`};
  const calc=()=>filas.length>1||num(descPq().valor)>0?calcPaquete({partes:filas,descuento:descPq()},mon()):filas.length?calcPrecio(filas[0],mon()):null;
  const pinta=()=>{box.innerHTML=filas.map(fila).join('');pqBox.hidden=filas.length<2;actualiza(false)};
- const actualiza=(llenar)=>{
+ const hTem=(()=>{if(!ftm)return null;let h=s.querySelector('#ftmh');if(!h){h=document.createElement('p');h.id='ftmh';h.className='hint';ftm.closest('.g2').insertAdjacentElement('afterend',h)}return h})();
+ const sincTemas=()=>{if(!ftm)return;const pt=filas.filter(p=>p.precioModo==='porTema');
+  if(!pt.length){ftm.readOnly=false;if(hTem)hTem.textContent='';return}
+  const suma=pt.reduce((a,p)=>a+Math.max(1,parseInt(p.cantidad,10)||1),0);ftm.value=suma;ftm.readOnly=pt.length>1;
+  if(hTem)hTem.textContent=pt.length>1?'Se calcula con los servicios: '+pt.map(p=>{const n=Math.max(1,parseInt(p.cantidad,10)||1);return n+' '+uniTxt(p,n)}).join(' + ')+'. Cambia las cantidades abajo, en “Calcular el monto con servicios”.':'Va junto con la cantidad del servicio de abajo.'};
+ const actualiza=(llenar)=>{sincTemas();
   box.querySelectorAll('.svrow').forEach((r,i)=>{const b=r.querySelector('.svs');if(b&&filas[i])b.textContent=fmt(calcPrecio(filas[i],mon()).total,mon())});
   const r=calc();tot.innerHTML=r?htmlDesglose(r,mon()):'';
   if(r&&llenar&&r.total>0){fo.value=r.total;fo.dispatchEvent(new Event('input',{bubbles:true}))}};
  const cambiar=()=>{tocado=true;actualiza(true)};
- box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1);if(filas.length===1&&ftm)ftm.value=filas[i].cantidad}if(e.target.dataset.f==='cam')filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);cambiar()});
+ box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1)}if(e.target.dataset.f==='cam')filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);cambiar()});
  box.addEventListener('change',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;
   if(e.target.dataset.f==='mod'){const md=modelos().find(x=>x.id===e.target.value);if(md){filas[i]=cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},Math.max(1,parseInt(filas[i].cantidad,10)||1));tocado=true;pinta();actualiza(true)}}
   else if(e.target.dataset.f==='alt'){filas[i].alt=e.target.value;cambiar()}});
@@ -1439,7 +1446,7 @@ function montarServicios(s,t0){
   const temas=parseInt(ftm&&ftm.value,10)||0;filas.push(cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},filas.length===0&&temas>0?temas:1));tocado=true;pinta();actualiza(true);
   const n=box.querySelector('.svrow:last-child [data-f=n]');n&&n.focus()});
  pqBox.addEventListener('input',cambiar);pqBox.addEventListener('change',cambiar);
- if(ftm)ftm.addEventListener('input',()=>{if(filas.length===1&&filas[0].precioModo==='porTema'){const v=parseInt(ftm.value,10)||0;if(v>0){filas[0].cantidad=v;const n=box.querySelector('[data-f=n]');if(n)n.value=v;cambiar()}}});
+ if(ftm)ftm.addEventListener('input',()=>{const pt=filas.filter(p=>p.precioModo==='porTema');if(pt.length===1){const f0=pt[0];const v=parseInt(ftm.value,10)||0;if(v>0){f0.cantidad=v;const k=filas.indexOf(f0);const n=box.querySelectorAll('.svrow')[k]&&box.querySelectorAll('.svrow')[k].querySelector('[data-f=n]');if(n)n.value=v;tocado=true;actualiza(true)}return}if(filas.length===1&&filas[0].precioModo==='porTema'){const v=parseInt(ftm.value,10)||0;if(v>0){filas[0].cantidad=v;const n=box.querySelector('[data-f=n]');if(n)n.value=v;cambiar()}}});
  s.querySelector('#fm')&&s.querySelector('#fm').addEventListener('change',()=>actualiza(false));
  pinta();
  return {aplicar(t){
@@ -1448,7 +1455,8 @@ function montarServicios(s,t0){
   if(filas.length===1&&!(num(dq.valor)>0)){const p=filas[0];
    t.cot={...(prev.modo==='modelo'?prev:{}),...p,modo:'modelo',num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
    if(p.precioModo==='porTema')t.temas=Math.max(1,parseInt(p.cantidad,10)||1)}
-  else t.cot={...(prev.modo==='paquete'?prev:{titulo:'Cotización – Paquete de producción audiovisual',etiqueta:filas[0].etiqueta||'Cliente',ciudad:filas[0].ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',consideraciones:filas[0].consideraciones||[],pago:filas[0].pago||[]}),
+  else{const pt=filas.filter(p=>p.precioModo==='porTema');if(pt.length)t.temas=pt.reduce((a,p)=>a+Math.max(1,parseInt(p.cantidad,10)||1),0)}
+  if(filas.length>1||num(dq.valor)>0)t.cot={...(prev.modo==='paquete'?prev:{titulo:'Cotización – Paquete de producción audiovisual',etiqueta:filas[0].etiqueta||'Cliente',ciudad:filas[0].ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',consideraciones:filas[0].consideraciones||[],pago:filas[0].pago||[]}),
    modo:'paquete',partes:filas.map(p=>{const q={...p,modo:'modelo'};delete q.num;delete q.emitida;delete q.valida;return q}),descuento:dq,num:prev.num||'',emitida:prev.emitida||'',valida:prev.valida||''};
  }};
 }
@@ -1494,7 +1502,7 @@ function fPaquete(id){
    if(!(n.partes||[]).length||!(r.total>0)){s.querySelector('#pq-err').textContent='Agrega al menos un servicio con precio.';return}
    const cot={...n,num:n.num||sigNumCot(String(n.emitida).slice(0,4))};
    const usar=!!new FormData(F).get('usarTotal'),ir=e.submitter&&e.submitter.value;
-   await mutT(id,x=>{x.cot={...cot,partes:x.cot.partes};if(usar)x.total=r.total});
+   await mutT(id,x=>{x.cot={...cot,partes:x.cot.partes};if(usar)x.total=r.total;const tp=temasDePartes(x.cot.partes);if(tp)x.temas=tp});
    toast('Cotización '+cot.num+' guardada.');verT(id);
    const t2=S.trabajos.find(x=>x.id===id);
    if(t2&&ir==='pdf')hacerCotPdf(t2);else if(t2&&ir==='wa')enviarCot(t2);
