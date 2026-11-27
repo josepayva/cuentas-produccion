@@ -290,14 +290,14 @@ async def cotizacion(p):
     await d.save_as('/tmp/cot-modelo.pdf')
     tp = pdftxt('/tmp/cot-modelo.pdf')
     comprobar('3 videos musicales' in tp and 'Cliente frecuente' in tp and 'Ahorro' in tp, 'el PDF muestra el desglose con descuentos')
-    comprobar(d.suggested_filename.startswith('COT-2026-001'), 'numera la cotización: ' + d.suggested_filename)
+    comprobar(d.suggested_filename.startswith('EMS-2026-1148'), 'numera la cotización: ' + d.suggested_filename)
     t = servidor(await estado(pg), 'trabajos')[0]
     comprobar(t['cot']['modo'] == 'modelo' and t['total'] == 6412.5 and t['cot']['cantidad'] == 3, 'guarda la cotización y actualiza el monto')
     async with pg.expect_download():
         await pg.click('#sheet [data-a=cotWa]')
     await pg.wait_for_timeout(500)
     href = await pg.locator('#sheet a[href*="wa.me"]').get_attribute('href')
-    comprobar('COT-2026-001' in urllib.parse.unquote(href), 'WhatsApp abre con el mensaje de la cotización')
+    comprobar('EMS-2026-1148' in urllib.parse.unquote(href), 'WhatsApp abre con el mensaje de la cotización')
     await pg.click('#sheet [data-a=verT]'); await pg.wait_for_timeout(300)
     await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
     await pg.locator('.segm button', has_text='Por partidas').click(); await pg.wait_for_timeout(300)
@@ -366,7 +366,7 @@ async def boda(p):
     comprobar('12,500.00' in await pg.inner_text('#ap-desg'), 'al aprobar elige 4K + dron: ' + await pg.inner_text('#ap-desg'))
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(500)
     t = servidor(await estado(pg), 'trabajos')[0]
-    comprobar(t['estadoProd'] == 'produccion' and t['total'] == 12500 and t['cot']['num'] == 'COT-2026-001', 'queda aprobado con el total elegido y el mismo número')
+    comprobar(t['estadoProd'] == 'produccion' and t['total'] == 12500 and t['cot']['num'] == 'EMS-2026-1148', 'queda aprobado con el total elegido y el mismo número')
     async with pg.expect_download() as dl:
         await pg.click('#sheet [data-a=cotPdf]')
     await (await dl.value).save_as('/tmp/cot-boda.pdf')
@@ -480,6 +480,27 @@ async def sin_desborde(p):
     comprobar(not malos, 'ninguna vista se desborda a los costados' + ('' if not malos else ': ' + ' | '.join(malos)))
     await pg.goto(URL + '?v=r#resumen'); await pg.wait_for_timeout(700)
     await pg.screenshot(path='/tmp/resumen-iphone.png', full_page=True)
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
+@prueba
+async def numeracion(p):
+    b, ctx, pg = await nueva(p)
+    async def cotizar(titulo):
+        await nuevo_trabajo(pg, titulo=titulo, monto='2500')
+        await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+        await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
+        await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+        return next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == titulo)['cot']['num']
+    a = await cotizar('Uno'); c = await cotizar('Dos')
+    comprobar(a == 'EMS-2026-1148' and c == 'EMS-2026-1149', f'números correlativos: {a}, {c}')
+    await pg.click('[data-a=ajustes]'); await pg.wait_for_timeout(400)
+    comprobar(await pg.input_value('#ans') == '1150' and 'EMS-2026-1150' in await pg.inner_text('#anx'), 'Ajustes muestra el próximo número')
+    await pg.fill('#ans', '1300'); await pg.uncheck('[name=cotAnio]'); await pg.wait_for_timeout(100)
+    comprobar('EMS-1300' in await pg.inner_text('#anx'), 'el ejemplo se actualiza al escribir')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(400)
+    d = await cotizar('Tres')
+    comprobar(d == 'EMS-1300', 'se puede cambiar el número y quitar el año: ' + d)
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
