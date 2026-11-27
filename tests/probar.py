@@ -40,8 +40,13 @@ async def nueva(p, entrar=True, **kw):
     await pg.click('#lgf button[type=submit]'); await pg.wait_for_timeout(700)
     return b, ctx, pg
 
+async def abrir_cot(pg):
+    # Una cotización nueva ya abre su editor al guardarse; si no, se abre desde el trabajo
+    if await pg.locator('#sheet [data-a=fCot]').count():
+        await pg.click('#sheet [data-a=fCot]')
+
 async def nuevo_trabajo(pg, titulo='Prueba', artista='Artista', monto='2000', fecha='2026-11-28', **extra):
-    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.click('#sheet [data-tipo=__libre]')
     await pg.fill('#ft', titulo); await pg.fill('#far', artista); await pg.fill('#fo', monto); await pg.fill('#ff', fecha)
     for sel, v in extra.items():
         await pg.fill('#' + sel, v)
@@ -256,12 +261,12 @@ async def cotizacion(p):
     import subprocess, urllib.parse
     pdftxt = lambda ruta: subprocess.run(['pdftotext', ruta, '-'], capture_output=True, text=True).stdout
     b, ctx, pg = await nueva(p, viewport={'width': 1280, 'height': 900})
-    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.click('#sheet [data-tipo=__libre]')
     await pg.fill('#ft', 'Videoclip Amanecer'); await pg.fill('#far', 'Banda Sol'); await pg.fill('#fo', '1000'); await pg.fill('#ff', '2026-12-10')
     await pg.select_option('#fe', 'cotizado')
     await pg.fill('#ftm', '3'); await pg.fill('#sheet [name=temasNom]', 'Amanecer, Lluvia, Volver')
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
-    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(400)
+    await abrir_cot(pg); await pg.wait_for_timeout(400)
     comprobar(await pg.locator('.segm button.on').inner_text() == 'Videoclip', 'elige el modelo Videoclip según el tipo de trabajo')
     comprobar('3 videos musicales («Amanecer», «Lluvia», «Volver»)' in await pg.inner_text('#ce-prev'), 'la descripción usa la cantidad y los nombres de los temas')
     des = await pg.inner_text('#ce-desg')
@@ -299,12 +304,12 @@ async def cotizacion(p):
     href = await pg.locator('#sheet a[href*="wa.me"]').get_attribute('href')
     comprobar('EMS-2026-1148' in urllib.parse.unquote(href), 'WhatsApp abre con el mensaje de la cotización')
     await pg.click('#sheet [data-a=verT]'); await pg.wait_for_timeout(300)
-    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    await abrir_cot(pg); await pg.wait_for_timeout(300)
     await pg.locator('.segm button', has_text='Por partidas').click(); await pg.wait_for_timeout(300)
     comprobar(await pg.locator('#sheet .qrow').count() >= 1, 'se puede cambiar a cotización por partidas')
     await pg.click('#sheet [data-a=verT]'); await pg.wait_for_timeout(300)
     # paquete: videoclip + sesión en vivo
-    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    await abrir_cot(pg); await pg.wait_for_timeout(300)
     await pg.locator('.segm button', has_text='Paquete').click(); await pg.wait_for_timeout(500)
     comprobar(await pg.locator('#pq-partes .pqp').count() == 1, 'el paquete empieza con la cotización actual como 1.ª parte')
     await pg.click('[data-addp=envivo]'); await pg.wait_for_timeout(500)
@@ -352,11 +357,11 @@ async def cotizacion(p):
 @prueba
 async def boda(p):
     b, ctx, pg = await nueva(p, viewport={'width': 1280, 'height': 900})
-    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.click('#sheet [data-tipo=__libre]')
     await pg.fill('#ft', 'Boda Ana y Luis'); await pg.fill('#far', 'Ana y Luis'); await pg.fill('#fo', '10000'); await pg.fill('#ff', '2026-12-20')
     await pg.select_option('#fe', 'cotizado')
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
-    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    await abrir_cot(pg); await pg.wait_for_timeout(300)
     await pg.click('.segm [data-mod=boda]'); await pg.wait_for_timeout(300)
     comprobar(await pg.locator('#ce-alt .arow').count() == 2 and await pg.locator('#ce-prebox').is_hidden(), 'Boda trae Full HD y 4K como opciones de precio')
     await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
@@ -407,7 +412,7 @@ async def dolares(p):
     await ctx.route('https://open.er-api.com/**', lambda r: r.fulfill(json={'result': 'success', 'rates': {'USD': 1, 'PEN': 3.8, 'EUR': 0.95}}))
     await nuevo_trabajo(pg, titulo='Soles', monto='1000')
     await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
-    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.click('#sheet [data-tipo=__libre]')
     await pg.fill('#ft', 'Spot USA'); await pg.fill('#far', 'Marca X'); await pg.fill('#fo', '500'); await pg.fill('#ff', '2026-11-28')
     await pg.select_option('#sheet select[name=moneda]', 'USD')
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(5500)
@@ -433,7 +438,7 @@ async def dolares(p):
 @prueba
 async def servicios_en_trabajo(p):
     b, ctx, pg = await nueva(p)
-    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.click('#sheet [data-tipo=__libre]')
     await pg.fill('#ft', 'Proyecto Duo'); await pg.fill('#far', 'Duo Andino'); await pg.fill('#ff', '2026-12-15'); await pg.fill('#ftm', '2')
     await pg.click('.srvd summary')
     await pg.click('[data-srv=videoclip]'); await pg.wait_for_timeout(150)
@@ -455,7 +460,7 @@ async def servicios_en_trabajo(p):
     await pg.locator('#srv .svrow').first.locator('[data-f=n]').fill('3'); await pg.wait_for_timeout(150)
     comprobar(await pg.input_value('#fo') == '8650' and await pg.input_value('#ftm') == '6', 'al cambiar a 3 videos se recalculan monto y temas: ' + await pg.input_value('#fo'))
     await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(600)
-    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(400)
+    await abrir_cot(pg); await pg.wait_for_timeout(400)
     comprobar(await pg.locator('#pq-partes .pqp').count() == 2 and '8,650.00' in await pg.inner_text('#pq-desg'), 'Armar cotización abre el paquete listo')
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
@@ -488,7 +493,7 @@ async def numeracion(p):
     b, ctx, pg = await nueva(p)
     async def cotizar(titulo):
         await nuevo_trabajo(pg, titulo=titulo, monto='2500')
-        await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+        await abrir_cot(pg); await pg.wait_for_timeout(300)
         await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
         await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
         return next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == titulo)['cot']['num']
@@ -502,7 +507,7 @@ async def numeracion(p):
     d = await cotizar('Tres')
     comprobar(d == 'EMS-1300', 'se puede cambiar el número y quitar el año: ' + d)
     await pg.locator('[data-a=verT]:visible', has_text='Uno').first.click(); await pg.wait_for_timeout(300)
-    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    await abrir_cot(pg); await pg.wait_for_timeout(300)
     comprobar(await pg.input_value('#qn') == 'EMS-2026-1148', 'la cotización muestra su número para editarlo')
     await pg.fill('#qn', 'ems-2026-1148b'); await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
     e = next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == 'Uno')['cot']['num']
@@ -516,7 +521,7 @@ async def cotizacion_calendario(p):
     await pg.evaluate("localStorage.setItem('fake-cal','{\"con\":true}')")
     await pg.reload(); await pg.wait_for_timeout(900)
     await pg.evaluate("window.__fnLog=[]")
-    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.click('#sheet [data-tipo=__libre]')
     await pg.fill('#ft', 'Cotización Rodaje'); await pg.fill('#far', 'Grupo X'); await pg.fill('#fo', '2500'); await pg.fill('#ff', '2026-12-12')
     await pg.fill('#fi', 'camarografo@gmail.com')
     await pg.select_option('#fe', 'cotizado'); await pg.wait_for_timeout(100)
@@ -525,6 +530,9 @@ async def cotizacion_calendario(p):
     log = await pg.evaluate("window.__fnLog")
     cr = [x for x in log if x.get('tool') == 'create_event']
     comprobar(len(cr) == 1 and cr[0]['input']['summary'].startswith('Por confirmar:') and cr[0]['input'].get('colorId') == '8' and cr[0]['input'].get('notificationLevel') == 'NONE', 'evento “Por confirmar” en gris y sin avisar: ' + str(cr[0]['input'] if cr else log))
+    comprobar(await pg.is_visible('#sheet form') and 'Cotización' in await pg.inner_text('#sheet .shd'), 'al guardar se abre la cotización para revisarla')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(300)
+    await pg.click('.cqrow h3'); await pg.wait_for_timeout(300)
     await pg.evaluate("window.__fnLog=[]")
     await pg.click('#sheet [data-a=pago]'); await pg.wait_for_timeout(200)
     for k in ['C', '1', '2', '5', '0', 'ok']:
@@ -537,6 +545,52 @@ async def cotizacion_calendario(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def cotizacion_nueva(p):
+    b, ctx, pg = await nueva(p)
+    await pg.click('.fab')
+    txt = await pg.inner_text('#sheet .elige')
+    comprobar(txt.index('Nueva cotización') < txt.index('Nuevo trabajo'), '+ Nuevo ofrece primero “Nueva cotización”')
+    await pg.click('#sheet [data-a=nuevaCot]'); await pg.wait_for_timeout(150)
+    tipos = await pg.eval_on_selector_all('#sheet [data-tipo]', 'b=>b.map(x=>x.dataset.tipo)')
+    comprobar(tipos == ['videoclip', 'envivo', 'boda', '__paquete', '__partidas'], 'tipos de cotización: ' + str(tipos))
+    comprobar('2,500' in await pg.inner_text('#sheet [data-tipo=videoclip]'), 'cada tipo muestra su precio')
+    await pg.click('#sheet [data-tipo=__paquete]'); await pg.wait_for_timeout(300)
+    comprobar('Nueva cotización' in await pg.inner_text('#sheet .shd') and await pg.input_value('#fe') == 'cotizado', 'el formulario se abre como cotización')
+    comprobar(await pg.locator('#srv .svrow').count() == 2 and float(await pg.input_value('#fo') or 0) > 0, 'el paquete trae 2 servicios y calcula el monto')
+    await pg.fill('#ft', 'Paquete Prueba'); await pg.fill('#far', 'Banda Q'); await pg.fill('#ff', '2026-12-20')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    comprobar('paquete' in (await pg.inner_text('#sheet .shd')).lower(), 'al guardar abre la cotización por paquete')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(300)
+    comprobar(await pg.is_visible('#cotq') and 'Sin enviar' in await pg.inner_text('.cqrow'), 'Inicio muestra “Cotizaciones por confirmar”')
+    comprobar(await pg.locator('.cqrow [data-a=cotWa]').count() == 1 and await pg.locator('.cqrow [data-a=aprobar]').count() == 1, 'con botones Enviar y Aprobada')
+    await pg.click('.cqrow [data-a=cotWa]'); await pg.wait_for_timeout(2500)
+    await pg.evaluate("(()=>{const a=document.querySelector('#cpWa');a.addEventListener('click',e=>e.preventDefault(),{capture:true});a.click()})()")
+    await pg.wait_for_timeout(500)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['cot'].get('enviada') == await pg.evaluate("new Intl.DateTimeFormat('en-CA',{timeZone:'America/Lima'}).format(new Date())"), 'al abrir WhatsApp queda marcada como enviada')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(300)
+    comprobar('Enviada hoy' in await pg.inner_text('.cqrow') and 'Reenviar' in await pg.inner_text('.cqrow'), 'Inicio muestra “Enviada hoy”')
+    await pg.click('.cqrow h3'); await pg.wait_for_timeout(300)
+    await pg.click('#sheet [data-a=cotEnv]'); await pg.wait_for_timeout(400)
+    comprobar('Ya la envié' in await pg.inner_text('#sheet .qenv'), 'se puede quitar la marca de enviada')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('[data-a=verCots]'); await pg.wait_for_timeout(300)
+    comprobar('#trabajos' in pg.url and await pg.locator('.chip.on[data-id=cotizado]').count() == 1, '“Ver en Trabajos” abre el filtro Cotizaciones')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoTipo]'); await pg.wait_for_timeout(150)
+    tipos = await pg.eval_on_selector_all('#sheet [data-tipo]', 'b=>b.map(x=>x.dataset.tipo)')
+    comprobar(tipos[-1] == '__libre' and '__partidas' not in tipos, 'trabajo nuevo: tipos con “Monto libre”')
+    await pg.click('#sheet [data-tipo=videoclip]'); await pg.wait_for_timeout(300)
+    comprobar('Nuevo trabajo' in await pg.inner_text('#sheet .shd') and await pg.input_value('#fe') == 'produccion' and await pg.input_value('#fo') == '2500' and await pg.input_value('#fy') == 'Videoclip', 'trabajo de videoclip con monto y tipo puestos')
+    await pg.click('#sheet [data-a=cerrar]')
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=__partidas]'); await pg.wait_for_timeout(300)
+    await pg.fill('#ft', 'Spot Tienda'); await pg.fill('#fo', '900')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    comprobar(await pg.locator('#sheet form').count() == 1 and 'Spot Tienda' in await pg.inner_text('#sheet'), '“Otro” abre la cotización por conceptos: ' + (await pg.inner_text('#sheet .shd')))
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await pg.screenshot(path='/tmp/cotq.png', full_page=False)
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:
@@ -546,4 +600,5 @@ async def main():
     print('\nFallos:', comprobar.fallos)
     sys.exit(1 if comprobar.fallos else 0)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
