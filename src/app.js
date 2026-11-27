@@ -1140,7 +1140,7 @@ const MSG_COT_DEF='Hola {nombre}, ¿cómo estás? Te envío la cotización {nume
 // Cómo se cobra cada modelo: precio fijo o por tema (con monto base y descuento por cantidad)
 const PRECIO_DEF={
  videoclip:{precioModo:'porTema',precio:2500,precioBase:0,unidad:{s:'video musical',p:'videos musicales'},escala:{tipo:'pct',tramos:[{desde:2,valor:15},{desde:3,valor:20}]}},
- envivo:{camaras:5,precioModo:'porTema',precio:300,precioBase:1500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
+ envivo:{camaras:5,precioCamara:500,camarasIncl:0,precioModo:'porTema',precio:300,precioBase:1500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
  boda:{precioModo:'fijo',escala:{tipo:'ninguna',tramos:[]}}};
 MODELOS_DEF.forEach(x=>Object.assign(x,PRECIO_DEF[x.id]||{}));
 const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>textosActuales({...(x.precioModo?{}:PRECIO_DEF[x.id]||{}),...x,modelo:x.id})):MODELOS_DEF;
@@ -1156,6 +1156,7 @@ const TXT_VIEJO=[['Filmación multicámara con hasta 5 cámaras de alta calidad 
 const txtActual=x=>{let v=String(x||'');for(const [a,b] of TXT_VIEJO)v=v.split(a).join(b);return v};
 function textosActuales(c){if(!c)return c;const n={...c,intro:introActual(c.intro),incluye:(c.incluye||[]).map(txtActual),secciones:(c.secciones||[]).map(x=>({...x,texto:txtActual(x.texto)}))};
  if(n.camaras==null&&(n.modelo==='envivo'||n.incluye.some(x=>x.includes('{camaras}'))))n.camaras=5;
+ if(n.camaras!=null&&n.precioCamara==null&&n.modelo==='envivo')n.precioCamara=500;
  if(n.partes)n.partes=n.partes.map(textosActuales);return n}
 const cantDe=(c,t)=>Math.max(0,parseInt(c&&c.cantidad,10)||parseInt(t&&t.temas,10)||0);
 // Los nombres de los temas del trabajo solo se usan si la cantidad coincide (en un paquete cada parte tiene la suya)
@@ -1179,6 +1180,7 @@ function calcPrecio(c,m){
   const n=Math.max(1,parseInt(c.cantidad,10)||1),pu=num(c.precio),base=num(c.precioBase);
   if(base>0){L.push({c:'Monto base de producción',m:base});sub+=base}
   L.push({c:`${n} ${uniTxt(c,n)} × ${fmtR(pu,m)}`,m:r2(pu*n)});sub+=pu*n;
+  sub+=lineaCamaras(c,m,L);
   const e=c.escala||{};
   if(e.tipo==='pct'){const p=tramoPara(e.tramos,n);if(p>0){const d=r2(pu*n*p/100);L.push({c:`Descuento por ${n} ${uniTxt(c,n)} (−${p}%)`,m:-d,desc:1});sub-=d}}
   else if(e.tipo==='precio'){let tot=0;const gr=[];for(let k=1;k<=n;k++){const v=tramoPara(e.tramos,k)??pu;tot+=v;const g=gr[gr.length-1];if(g&&g.v===v)g.h=k;else gr.push({d:k,h:k,v})}
@@ -1186,7 +1188,7 @@ function calcPrecio(c,m){
  }else{
   const alt=(c.alternativas||[]).find(a=>a.id&&a.id===c.alt);
   if((c.alternativas||[]).length&&!alt){const mn=Math.min(...c.alternativas.map(a=>num(a.precio)));L.push({c:(c.altTitulo||'Opciones')+': desde',m:mn,pend:1});sub+=mn}
-  else{const v=alt?num(alt.precio):num(c.precio);L.push({c:(c.nombre||(c.servicio&&c.servicio!=='Servicios principales'?c.servicio:'Servicio'))+(alt?' – '+alt.nombre+(alt.detalle?' ('+alt.detalle+')':''):''),m:v});sub+=v}
+  else{const v=alt?num(alt.precio):num(c.precio);L.push({c:(c.nombre||(c.servicio&&c.servicio!=='Servicios principales'?c.servicio:'Servicio'))+(alt?' – '+alt.nombre+(alt.detalle?' ('+alt.detalle+')':''):''),m:v});sub+=v;sub+=lineaCamaras(c,m,L)}
  }
  for(const o of (c.opcionales||[]).filter(o=>o.ok)){L.push({c:o.nombre,m:num(o.precio)});sub+=num(o.precio)}
  const dm=c.descuento||{};let dd=0;
@@ -1202,6 +1204,8 @@ function calcPaquete(c,m){
  const ahorroPartes=L.reduce((a,x)=>a+(x.ahorro||0),0),total=r2(Math.max(0,sub-dd));
  return {lineas:L,total,ahorro:r2(ahorroPartes+dd),pendiente:(c.partes||[]).some(p=>calcPrecio(p,m).pendiente)};
 }
+// Cámaras: cada cámara cuesta precioCamara (las primeras camarasIncl van sin costo)
+function lineaCamaras(c,m,L){const k=parseInt(c.camaras,10)||0,pc=num(c.precioCamara),inc=parseInt(c.camarasIncl,10)||0,cob=Math.max(0,k-inc);if(!(pc>0)||!cob)return 0;L.push({c:`${inc?cob+' '+(cob===1?'cámara adicional':'cámaras adicionales'):camTxt(c)} × ${fmtR(pc,m)}`,m:r2(pc*cob)});return r2(pc*cob)}
 const totModelo=c=>c.modo==='paquete'?calcPaquete(c,'PEN').total:calcPrecio(c,'PEN').total;
 function tituloParte(p){const md=modelos().find(x=>x.id===p.modelo);const nom=p.nombre||(md&&md.nombre)||'Servicio';if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return nom+' · '+n+' '+uniTxt(p,n)+(p.camaras?' · '+camTxt(p):'')}const alt=(p.alternativas||[]).find(a=>a.id===p.alt);return nom+(alt?' · '+alt.nombre:'')}
 function textoPartes(c){const xs=(c.partes||[]).map(p=>{const md=modelos().find(x=>x.id===p.modelo),nom=(p.nombre||(md&&md.nombre)||'servicio').toLowerCase();if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return p.modelo==='videoclip'?(n===1?'1 video musical':n+' videos musicales'):nom+' de '+n+' '+uniTxt(p,n)}return nom});return xs.length>1?xs.slice(0,-1).join(', ')+' y '+xs[xs.length-1]:(xs[0]||'')}
@@ -1213,7 +1217,7 @@ function cotDesdeModelo(md,t,cantidad){
  const c={modo:'modelo',modelo:md.id,nombre:base.nombre,titulo:base.titulo,etiqueta:base.etiqueta||'Cliente',intro:introActual(base.intro),servicio:base.servicio,ciudad:t&&t.lugar?String(t.lugar).split(/[,–-]/)[0].trim():'',
   precioModo:base.precioModo||'fijo',precio:num(base.precio),precioBase:num(base.precioBase),unidad:base.unidad||{s:'tema',p:'temas'},escala:base.escala||{tipo:'ninguna',tramos:[]},
   cantidad:cantidad||Math.max(1,parseInt(t&&t.temas,10)||1),descuento:{tipo:'monto',valor:0,motivo:''},
-  ...(base.camaras!=null?{camaras:parseInt(base.camaras,10)||1}:{}),
+  ...(base.camaras!=null?{camaras:parseInt(base.camaras,10)||1,precioCamara:num(base.precioCamara),camarasIncl:parseInt(base.camarasIncl,10)||0}:{}),
   incluye:base.incluye||[],equipos:base.equipos||[],
   opcionales:(base.opcionales||[]).map(o=>({id:uid(),nombre:o.nombre,precio:num(o.precio),ok:false})),notaOpc:base.notaOpc||'',
   altTitulo:base.altTitulo||'Opciones',alternativas:(base.alternativas||[]).map(a=>({id:uid(),nombre:a.nombre,detalle:a.detalle||'',precio:num(a.precio)})),alt:'',
@@ -1238,7 +1242,7 @@ function htmlEditorCot(c,t,m,modo){
   ${modo==='parte'?`<label for="ce-nom">Nombre de esta parte</label><input id="ce-nom" name="nombre" value="${esc(c.nombre||'')}">`:`<label for="ce-tit">Título del documento</label><input id="ce-tit" name="titulo" value="${esc(c.titulo)}">`}
   ${modo==='parte'?'':`<div class="g2"><div><label for="ce-eti">Se dirige a</label><select id="ce-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div>
   ${modo==='cot'?`<div><label for="ce-ciu">Ciudad</label><input id="ce-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div>`:'<div></div>'}</div>`}
-  ${c.camaras!=null?`<label for="ce-cam">Número de cámaras</label><input id="ce-cam" name="camaras" type="number" min="1" max="20" step="1" inputmode="numeric" value="${esc(parseInt(c.camaras,10)||'')}"><p class="hint">Se escribe donde pongas {camaras}, por ejemplo “Filmación multicámara con 5 cámaras…”.</p>`:''}
+  ${c.camaras!=null?`<div class="g3"><div><label for="ce-cam">Número de cámaras</label><input id="ce-cam" name="camaras" type="number" min="1" max="20" step="1" inputmode="numeric" value="${esc(parseInt(c.camaras,10)||'')}"></div><div><label for="ce-pcam">Precio por cámara</label><input id="ce-pcam" name="precioCamara" inputmode="decimal" value="${esc(num(c.precioCamara)||'')}" placeholder="0"></div><div><label for="ce-icam">Incluidas sin costo</label><input id="ce-icam" name="camarasIncl" type="number" min="0" step="1" inputmode="numeric" value="${esc(parseInt(c.camarasIncl,10)||0)}"></div></div><p class="hint">Cada cámara suma su precio al total (menos las incluidas sin costo). El número se escribe donde pongas {camaras}, por ejemplo “Filmación multicámara con 5 cámaras…”.</p>`:''}
   <label for="ce-int">Descripción</label><textarea id="ce-int" name="intro" rows="4">${esc(c.intro)}</textarea>
   <p class="hint">Se reemplazan con los datos del trabajo: {videos} (p. ej. “3 videos musicales («A», «B», «C»)”), {canciones}, {temas}, {camaras}, {ciudad}, {artista} y {cliente}. También funcionan en “Qué incluye” y en las secciones.${enTrabajo?' La cantidad sale de “Cantidad” en Precio, y los nombres de “Temas a grabar” del trabajo.':''}</p>${enTrabajo?'<p class="hint cprev" id="ce-prev"></p>':''}
   <h4>Precio</h4>
@@ -1339,6 +1343,8 @@ function leerEditorCot(s,c0){
  if(F.has('nombre'))n.nombre=g('nombre');
  if(F.has('cantidad'))n.cantidad=Math.max(1,parseInt(F.get('cantidad'),10)||1);
  if(F.has('camaras'))n.camaras=Math.max(1,parseInt(F.get('camaras'),10)||1);
+ if(F.has('precioCamara'))n.precioCamara=r2(num(F.get('precioCamara')));
+ if(F.has('camarasIncl'))n.camarasIncl=Math.max(0,parseInt(F.get('camarasIncl'),10)||0);
  if(F.has('dValor'))n.descuento={tipo:g('dTipo')||'monto',valor:r2(num(F.get('dValor'))),motivo:g('dMotivo')};
  if(n.modo!=='paquete')n.modo='modelo';
  return n;
@@ -1424,7 +1430,7 @@ function montarServicios(s,t0){
   const r=calc();tot.innerHTML=r?htmlDesglose(r,mon()):'';
   if(r&&llenar&&r.total>0){fo.value=r.total;fo.dispatchEvent(new Event('input',{bubbles:true}))}};
  const cambiar=()=>{tocado=true;actualiza(true)};
- box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1);if(filas.length===1&&ftm)ftm.value=filas[i].cantidad}if(e.target.dataset.f==='cam'){filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);tocado=true;return}cambiar()});
+ box.addEventListener('input',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;if(e.target.dataset.f==='n'){filas[i].cantidad=Math.max(1,parseInt(e.target.value,10)||1);if(filas.length===1&&ftm)ftm.value=filas[i].cantidad}if(e.target.dataset.f==='cam')filas[i].camaras=Math.max(1,parseInt(e.target.value,10)||1);cambiar()});
  box.addEventListener('change',e=>{const r=e.target.closest('.svrow');if(!r)return;const i=+r.dataset.i;
   if(e.target.dataset.f==='mod'){const md=modelos().find(x=>x.id===e.target.value);if(md){filas[i]=cotDesdeModelo(md,{...t0,lugar:(s.querySelector('#fl')||{}).value||t0.lugar},Math.max(1,parseInt(filas[i].cantidad,10)||1));tocado=true;pinta();actualiza(true)}}
   else if(e.target.dataset.f==='alt'){filas[i].alt=e.target.value;cambiar()}});
@@ -1558,7 +1564,7 @@ function fModelo(id){
   montarEditorCot(s,m,null,false);
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const n=leerEditorCot(s,{}),D=new FormData(e.target),nombre=String(D.get('nombre')||'').trim();
    if(!nombre){s.querySelector('#ce-err').textContent='Ponle un nombre al modelo.';return}
-   const md={id:x0?x0.id:'m'+uid(),nombre,...(n.camaras!=null?{camaras:n.camaras}:{}),titulo:n.titulo,etiqueta:n.etiqueta,precioModo:n.precioModo,precio:n.precio,precioBase:n.precioBase,unidad:n.unidad,escala:n.escala,intro:n.intro,servicio:n.servicio,incluye:n.incluye,equipos:n.equipos,
+   const md={id:x0?x0.id:'m'+uid(),nombre,...(n.camaras!=null?{camaras:n.camaras,precioCamara:n.precioCamara||0,camarasIncl:n.camarasIncl||0}:{}),titulo:n.titulo,etiqueta:n.etiqueta,precioModo:n.precioModo,precio:n.precio,precioBase:n.precioBase,unidad:n.unidad,escala:n.escala,intro:n.intro,servicio:n.servicio,incluye:n.incluye,equipos:n.equipos,
     opcionales:n.opcionales.map(o=>({nombre:o.nombre,precio:o.precio})),notaOpc:n.notaOpc,altTitulo:n.altTitulo,alternativas:n.alternativas.map(a=>({nombre:a.nombre,detalle:a.detalle,precio:a.precio})),
     secciones:n.secciones,consideraciones:n.consideraciones,fechaEtiqueta:n.fechaEtiqueta,notaFecha:n.notaFecha,entrega:n.entrega,material:n.material,pago:n.pago,validez:Math.max(1,parseInt(D.get('validez'),10)||15)};
    const nueva=x0?lista.map(x=>x.id===x0.id?md:x):[...lista,md];
