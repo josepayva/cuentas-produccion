@@ -90,15 +90,17 @@ Deno.serve(async (req) => {
       if (!(monto > 0)) return texto('No entendí el monto del pago.');
       const ps = L.conSaldo(trabajos);
       let cands = b.trabajo ? L.buscarTrabajo(ps, String(b.trabajo), nomArt) : ps;
-      if (b.trabajo && !cands.length) cands = L.buscarTrabajo(trabajos.filter(L.cuenta), String(b.trabajo), nomArt);
+      if (b.trabajo && !cands.length) cands = L.buscarTrabajo(trabajos.filter(x => x.estadoProd !== 'cancelado'), String(b.trabajo), nomArt);
       if (!cands.length) return texto(b.trabajo ? `No encontré un trabajo que se llame «${b.trabajo}».` : 'No hay trabajos con saldo pendiente.');
       if (cands.length > 1) return texto('¿De cuál trabajo? ' + cands.slice(0, 6).map(t => L.linea(t, nomArt)).join(' · '));
       const t = cands[0];
       const met = METODOS.find(m => L.nrm(m) === L.nrm(b.metodo)) || (b.metodo ? 'Otro' : 'Otro');
       const p = { id: L.uid(), monto, fecha: hoy, metodo: met, nota: 'Registrado con Atajos' };
-      const n = await cambiarTrabajo(usuario, t.id, x => { x.pagos = x.pagos || []; x.pagos.push(p); });
+      const eraCot = t.estadoProd === 'cotizado';
+      // Un pago confirma la cotización: pasa a producción y el calendario avisará a los invitados (la app actualiza el evento)
+      const n = await cambiarTrabajo(usuario, t.id, x => { x.pagos = x.pagos || []; x.pagos.push(p); if (x.estadoProd === 'cotizado') { x.estadoProd = 'produccion'; if (x.cal) x.cal = { ...x.cal, notif: true }; } });
       const queda = L.saldo(n);
-      return texto(`Listo: pago de ${L.dinero(monto, t.moneda || 'PEN')} en «${t.titulo}». ${queda > 0.004 ? 'Queda ' + L.dinero(queda, t.moneda || 'PEN') + '.' : '¡Trabajo cobrado completo!'}`);
+      return texto(`Listo: pago de ${L.dinero(monto, t.moneda || 'PEN')} en «${t.titulo}». ${queda > 0.004 ? 'Queda ' + L.dinero(queda, t.moneda || 'PEN') + '.' : '¡Trabajo cobrado completo!'}${eraCot ? ' La cotización pasó a En producción.' : ''}`);
     }
 
     if (accion === 'resumen') {

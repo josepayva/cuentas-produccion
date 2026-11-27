@@ -510,6 +510,33 @@ async def numeracion(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def cotizacion_calendario(p):
+    b, ctx, pg = await nueva(p)
+    await pg.evaluate("localStorage.setItem('fake-cal','{\"con\":true}')")
+    await pg.reload(); await pg.wait_for_timeout(900)
+    await pg.evaluate("window.__fnLog=[]")
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevoT]')
+    await pg.fill('#ft', 'Cotización Rodaje'); await pg.fill('#far', 'Grupo X'); await pg.fill('#fo', '2500'); await pg.fill('#ff', '2026-12-12')
+    await pg.fill('#fi', 'camarografo@gmail.com')
+    await pg.select_option('#fe', 'cotizado'); await pg.wait_for_timeout(100)
+    comprobar(not await pg.is_checked('[name=calEnt]') and not await pg.is_checked('[name=calNotif]') and await pg.is_checked('[name=calOn]'), 'cotización: va al calendario, sin fecha de entrega ni correos')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(1200)
+    log = await pg.evaluate("window.__fnLog")
+    cr = [x for x in log if x.get('tool') == 'create_event']
+    comprobar(len(cr) == 1 and cr[0]['input']['summary'].startswith('Por confirmar:') and cr[0]['input'].get('colorId') == '8' and cr[0]['input'].get('notificationLevel') == 'NONE', 'evento “Por confirmar” en gris y sin avisar: ' + str(cr[0]['input'] if cr else log))
+    await pg.evaluate("window.__fnLog=[]")
+    await pg.click('#sheet [data-a=pago]'); await pg.wait_for_timeout(200)
+    for k in ['C', '1', '2', '5', '0', 'ok']:
+        await pg.click(f'#sheet .k[data-k="{k}"]')
+    await pg.wait_for_timeout(1500)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['estadoProd'] == 'produccion' and t['cal']['notif'] is True, 'al registrar el pago pasa a En producción')
+    up = [x for x in await pg.evaluate("window.__fnLog") if x.get('tool') == 'update_event']
+    comprobar(up and not up[0]['input']['summary'].startswith('Por confirmar') and up[0]['input'].get('notificationLevel') == 'ALL' and up[0]['input'].get('colorId') == '4', 'el evento se confirma con el color de rodajes y avisa a los invitados: ' + str(up[0]['input'] if up else ''))
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

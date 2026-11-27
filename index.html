@@ -643,10 +643,15 @@ const TPL={
  tplCancel:'Hola {cliente}, ¿cómo estás? Te escribo por "{trabajo}": quedaría pendiente la cancelación de {monto}. Quedo atento a tu confirmación. ¡Gracias!'
 };
 const TERM_DEF='• Precios en la moneda indicada; no incluyen IGV salvo que se diga lo contrario.\n• Para separar la fecha se pide el adelanto indicado en la forma de pago.\n• El saldo se paga a la entrega del material final.\n• Incluye hasta 2 rondas de cambios en edición; cambios adicionales se cotizan aparte.\n• Cambios de fecha con al menos 72 horas de aviso; el adelanto no es reembolsable.';
-const DEF_AJ={cotPrefijo:'EMS',cotSig:1148,cotAnio:true,cotValidez:15,cotTerminos:TERM_DEF,cotContacto:'',negocio:'',moneda:'PEN',gracia:3,equipo:'',invFrec:'',tipoDef:'Videoclip',colRodaje:'4',colEntrega:'4',calId:'',calNom:'',...TPL};
+const DEF_AJ={cotPrefijo:'EMS',cotSig:1148,cotAnio:true,cotValidez:15,cotTerminos:TERM_DEF,cotContacto:'',negocio:'',moneda:'PEN',gracia:3,equipo:'',invFrec:'',tipoDef:'Videoclip',colRodaje:'4',colEntrega:'4',colCot:'8',calId:'',calNom:'',...TPL};
 const GCOL=[['1','Lavanda','#7986cb'],['2','Salvia','#33b679'],['3','Uva','#8e24aa'],['4','Flamenco','#e67c73'],['5','Plátano','#f6bf26'],['6','Mandarina','#f4511e'],['7','Pavo real','#039be5'],['8','Grafito','#616161'],['9','Arándano','#3f51b5'],['10','Albahaca','#0b8043'],['11','Tomate','#d50000']];
 const colHex=id=>{const c=GCOL.find(x=>x[0]===String(id));return c?c[2]:''};
 const colNom=id=>{const c=GCOL.find(x=>x[0]===String(id));return c?c[1]:(S.aj.calId?'Color del calendario '+(S.aj.calNom||''):'Predeterminado')};
+// Cotización confirmada (aprobada o con un pago): pasa a producción y el calendario avisa a los invitados
+function confirmarT(n){if(n.estadoProd!=='cotizado')return false;n.estadoProd='produccion';if(n.cal)n.cal={...n.cal,notif:true};return true}
+// Si el estado cambió fuera de la app (por ejemplo un pago con Siri), actualiza el evento una vez
+const calEstVisto={};
+function revisarCalEstados(){if(!mcpNs||!navigator.onLine)return;for(const t of S.trabajos){const c=t.cal;if(!c||!c.ev||!c.est||c.est===t.estadoProd||c.err)continue;const k=t.id+':'+t.estadoProd;if(calEstVisto[k])continue;calEstVisto[k]=1;setTimeout(()=>syncCal(t.id),1500)}}
 const colT=t=>t.color||S.aj.colRodaje||'';
 const ROSA='#d81b60';
 const colApp=id=>!id?ROSA:colHex(id);
@@ -780,7 +785,7 @@ function tiempoBloque(b){const fin=b.hasta&&b.hasta>b.fecha?b.hasta:b.fecha;
 function txtEvento(b){const x=tiempoBloque(b),ini=x.startTime.slice(0,10),fin=x.endTime.slice(0,10);if(x.allDay){const u=sumarDias(fin,-1);return u>ini?`un solo evento de todo el día del ${fcorta(ini)} al ${fcorta(u)}`:`un evento de todo el día el ${fcorta(ini)}`}const hi=x.startTime.slice(11,16),hf=x.endTime.slice(11,16);return fin>ini?`un solo evento seguido: empieza el ${fcorta(ini)} a las ${hi} y termina el ${fcorta(fin)} a las ${hf}`:`un evento el ${fcorta(ini)} de ${hi} a ${hf}`}
 function evTrabajo(t,b){
  const bs=bloques(t).sort((x,y)=>x.fecha.localeCompare(y.fecha));b=b||bs.find(x=>x.id==='d1')||{fecha:t.fecha};const i=bs.findIndex(x=>x.id===b.id)+1;
- const ev={summary:(t.estadoProd==='cotizado'?'Por confirmar: ':'')+t.titulo+conArt(t)+(bs.length>1?` (rodaje ${i} de ${bs.length})`:''),description:descEvento(t)};if(colT(t))ev.colorId=String(colT(t));if(t.lugar||(t.cal&&t.cal.ev))ev.location=t.lugar||'';
+ const ev={summary:(t.estadoProd==='cotizado'?'Por confirmar: ':'')+t.titulo+conArt(t)+(bs.length>1?` (rodaje ${i} de ${bs.length})`:''),description:descEvento(t)};{const col=t.estadoProd==='cotizado'&&S.aj.colCot?S.aj.colCot:colT(t);if(col)ev.colorId=String(col);else if(t.cal&&t.cal.ev)ev.colorId=''}if(t.lugar||(t.cal&&t.cal.ev))ev.location=t.lugar||'';
  return Object.assign(ev,tiempoBloque(b));
 }
 const evEntrega=t=>{const e={summary:'Entrega: '+t.titulo+conArt(t),description:descEvento(t),allDay:true,startTime:`${t.entrega}T00:00:00`,endTime:`${sumarDias(t.entrega,1)}T00:00:00`};if(S.aj.colEntrega)e.colorId=String(S.aj.colEntrega);return e};
@@ -817,7 +822,7 @@ async function syncCal(id){
    if(cal.evE){try{await call('update_event',{eventId:cal.evE,...ev,notificationLevel:'NONE'});hecho=true}catch(e){if(e&&e.code==='tool_error')cal.evE='';else throw e}}
    if(!hecho){const r=await call('create_event',{...ev,notificationLevel:'NONE'});cal.evE=evId(r)}
   }else if(cal.evE){await call('delete_event',{eventId:cal.evE,notificationLevel:'NONE'}).catch(e=>{if(!(e&&e.code==='tool_error'))throw e});cal.evE=''}
-  cal.err='';cal.ok=Date.now();
+  cal.err='';cal.ok=Date.now();cal.est=t.estadoProd;
  }catch(e){if(!navigator.onLine)e={code:'network'};cal.err=calMsg(e);if(!(e&&e.code==='network'&&calAvisoRed))toast(cal.err);if(e&&e.code==='network')calAvisoRed=1}
  delete enCurso[id];
  await mutT(id,n=>{n.cal=cal});
@@ -1211,7 +1216,7 @@ function dTrabajo(id){
  ${calBloque(t)}
  <div class="acts">
   ${e==='cotizado'?`<button class="btn pri" data-a="aprobar" data-id="${id}">${ic('check')}Cotización aprobada</button>${cotLista(t)?`<button class="btn" data-a="cotWa" data-id="${id}">${ic('wa')}Enviar cotización ${esc(t.cot.num||'')}</button><button class="btn" data-a="cotPdf" data-id="${id}">${ic('list')}PDF</button><button class="btn" data-a="fCot" data-id="${id}">${ic('edit')}Editar cotización</button>`:`<button class="btn" data-a="fCot" data-id="${id}">${ic('list')}Armar cotización</button>`}`:e==='cancelado'?'':cotLista(t)?`<button class="btn" data-a="cotPdf" data-id="${id}">${ic('list')}Cotización ${esc(t.cot.num||'')}</button><button class="btn" data-a="fCot" data-id="${id}">${ic('edit')}Editar cotización</button>`:`<button class="btn" data-a="fCot" data-id="${id}">${ic('list')}Cotización PDF</button>`}
-  ${sal>0&&cuenta(t)?`<button class="btn pri" data-a="pago" data-id="${id}">${ic('cash')}Registrar pago</button>`:''}
+  ${sal>0&&cuenta(t)?`<button class="btn pri" data-a="pago" data-id="${id}">${ic('cash')}Registrar pago</button>`:e==='cotizado'&&num(t.total)>0?`<button class="btn" data-a="pago" data-id="${id}">${ic('cash')}Registrar adelanto (confirma el trabajo)</button>`:''}
   ${tel&&sal>0&&cuenta(t)?`<a class="btn" href="${esc(waT(t))}" target="_blank" rel="noopener">${ic('wa')}${nx&&nx.tipo==='adelanto'?'Pedir adelanto por WhatsApp':nx&&nx.tipo==='entrega'?'Cobrar por WhatsApp':'Recordar por WhatsApp'}</a>`:''}
   ${['produccion','cotizado'].includes(t.estadoProd)?`<button class="btn" data-a="entregar" data-id="${id}">${ic('check')}Marcar entregado hoy</button>`:''}
   <button class="btn" data-a="copiarT" data-id="${id}">${ic('copy')}Copiar estado de cuenta</button><button class="btn" data-a="estadoPdf" data-id="${id}">${ic('gift')}Estado de cuenta PDF</button>
@@ -1338,8 +1343,9 @@ function fTrabajo(t,preCliente,preArt){
   <label class="chk"><input type="checkbox" name="invCliente"${t.invCliente?' checked':''}> Invitar también al cliente (si tiene correo)</label>
   <fieldset class="calf"><legend>Google Calendar</legend>${mcpNs?`
    <label class="chk"><input type="checkbox" name="calOn"${(t.cal?t.cal.on:nuevo)?' checked':''}> Poner el trabajo en mi calendario</label>
-   <label class="chk"><input type="checkbox" name="calEnt"${(t.cal?t.cal.entrega:true)?' checked':''}> Agregar también la fecha de entrega</label>
-   <label class="chk"><input type="checkbox" name="calNotif"${(t.cal?t.cal.notif!==false:true)?' checked':''}> Enviar la invitación por correo a los invitados</label>
+   <label class="chk"><input type="checkbox" name="calEnt"${(t.cal?t.cal.entrega:t.estadoProd!=='cotizado')?' checked':''}> Agregar también la fecha de entrega</label>
+   <label class="chk"><input type="checkbox" name="calNotif"${(t.cal?t.cal.notif!==false:t.estadoProd!=='cotizado')?' checked':''}> Enviar la invitación por correo a los invitados</label>
+   <p class="hint" id="fcalh"${t.estadoProd==='cotizado'?'':' hidden'}>En una cotización el evento sale como “Por confirmar”, sin correos a los invitados. Al aprobarla o registrar un pago pasa a “En producción” y se les envía la invitación.</p>
    <p class="hint">Sin horario, el trabajo se agrega como evento de todo el día. Los montos no se incluyen en el evento.</p>`:`<p class="hint">Abre la app desde Claude con Google Calendar conectado para agregar tus trabajos al calendario.</p>`}</fieldset>
   <details class="pres"${Object.values(pres).some(v=>num(v)>0)?' open':''}><summary>Presupuesto de gastos (opcional)</summary><p class="hint">Lo que estimas gastar. Al final lo comparas con lo gastado de verdad.</p><div class="g2">${CATS.map((k,i)=>`<div><label for="pp${i}">${k}</label><input id="pp${i}" name="p${i}" inputmode="decimal" value="${num(pres[k])>0?esc(pres[k]):''}" placeholder="0.00"></div>`).join('')}</div></details>
   <label for="fn">Notas</label><textarea id="fn" name="notas" placeholder="Entregables, acuerdos, datos de facturación…">${esc(t.notas)}</textarea>
@@ -1348,6 +1354,11 @@ function fTrabajo(t,preCliente,preArt){
   const F=s.querySelector('form'),fc=s.querySelector('#fc'),far=s.querySelector('#far'),nc=s.querySelector('#nc'),rows=s.querySelector('#rows'),err=s.querySelector('#ferr');
   const total=()=>num(s.querySelector('#fo').value),mon=()=>s.querySelector('#fm').value;
   const SRV=montarServicios(s,t);
+  {const fe=s.querySelector('#fe'),ce=s.querySelector('[name=calEnt]'),cn=s.querySelector('[name=calNotif]'),h=s.querySelector('#fcalh'),orig=t.estadoProd;let tocado=false;
+   [ce,cn].forEach(x=>x&&x.addEventListener('change',()=>{tocado=true}));
+   if(fe)fe.addEventListener('change',()=>{const cot=fe.value==='cotizado';if(h)h.hidden=!cot;
+    if(nuevo&&!tocado){if(ce)ce.checked=!cot;if(cn)cn.checked=!cot}
+    if(!nuevo&&orig==='cotizado'&&!cot&&cn)cn.checked=true});}
   const modo=()=>F.querySelector('input[name=modo]:checked').value;
   const pintaFilas=()=>{rows.innerHTML=filas.map((q,i)=>`<div class="cuota"><div class="cq1"><label for="qc${i}">Cuota ${i+1}</label><input id="qc${i}" data-i="${i}" data-k="concepto" value="${esc(q.concepto||'')}" placeholder="Ej. Adelanto"></div><div><label for="qm${i}">Monto</label><input id="qm${i}" data-i="${i}" data-k="monto" inputmode="decimal" value="${num(q.monto)>0?esc(q.monto):''}" placeholder="0.00"></div><div><label for="qf${i}">Fecha</label><input id="qf${i}" type="date" data-i="${i}" data-k="fecha" value="${esc(q.fecha||'')}"></div><button type="button" class="x sm" data-r="${i}" aria-label="Quitar cuota">×</button></div>`).join('');refresca()};
   const refresca=()=>{
@@ -1463,8 +1474,9 @@ function fPago(id,pid){
   const enviar=()=>{const v=calcExpr(ex);if(!(v>0)){err.textContent='Escribe un monto mayor a cero.';return}
    const D=new FormData(F);const datos={monto:v,fecha:fecha||hoy(),metodo:metodo||'Otro',nota:String(D.get('nota')||'').trim()};if(m!=='PEN'&&tcDe(m)>0&&!(pe&&pe.tc))datos.tc=tcDe(m);
    document.removeEventListener('keydown',kb);
-   mutT(id,n=>{n.pagos=n.pagos||[];if(pe){const k=n.pagos.findIndex(x=>x.id===pe.id);if(k>=0)Object.assign(n.pagos[k],datos)}else n.pagos.push({id:uid(),...datos});if(D.get('entregar')){n.estadoProd='entregado';n.entregadoEl=hoy()}});
-   const queda=Math.max(0,r2(sal-v));toast(pe?'Pago actualizado.':queda<=0.004?'Pago registrado. ¡Trabajo cobrado completo!':'Pago registrado. Queda '+fmt(queda,m)+'.');verT(id)};
+   const eraCot=(S.trabajos.find(x=>x.id===id)||{}).estadoProd==='cotizado'&&!pe;
+   mutT(id,n=>{n.pagos=n.pagos||[];if(pe){const k=n.pagos.findIndex(x=>x.id===pe.id);if(k>=0)Object.assign(n.pagos[k],datos)}else n.pagos.push({id:uid(),...datos});if(!pe)confirmarT(n);if(D.get('entregar')){n.estadoProd='entregado';n.entregadoEl=hoy()}}).then(()=>{if(eraCot)syncCal(id)});
+   const queda=Math.max(0,r2(sal-v));toast((pe?'Pago actualizado.':queda<=0.004?'Pago registrado. ¡Trabajo cobrado completo!':'Pago registrado. Queda '+fmt(queda,m)+'.')+(eraCot?' La cotización pasó a “En producción”.':''));verT(id)};
   F.addEventListener('submit',e=>{e.preventDefault();enviar()});
   const mapa={'*':'×','x':'×','X':'×','/':'÷','-':'−','+':'+',',':'.','.':'.','Backspace':'del','Delete':'C','Escape':null};
   function kb(e){if(!document.body.contains(F)){document.removeEventListener('keydown',kb);return}
@@ -1478,7 +1490,7 @@ function fPago(id,pid){
 }
 function elegirParaPago(){
  const act=activos();if(!act.length){toast('No tienes trabajos con saldo pendiente.');return}
- const ord=GRUPOS.flatMap(([k])=>act.filter(t=>estado(t)===k).sort(ordVence));
+ const ord=[...GRUPOS.flatMap(([k])=>act.filter(t=>estado(t)===k).sort(ordVence)),...S.trabajos.filter(t=>t.estadoProd==='cotizado'&&num(t.total)>0&&!act.includes(t))];
  abrir(cab('¿De qué trabajo es el pago?')+ord.map(t=>`<article class="row" data-a="pago" data-id="${t.id}">${avT(t)}<div class="rm"><h3>${esc(t.titulo)}</h3><p>${esc(quien(t))}</p></div><div class="ra"><b>${fmt(aCobrar(t),t.moneda)}</b>${chip(t)}</div></article>`).join(''));
 }
 
@@ -2147,7 +2159,7 @@ function fAprobar(id){
    <div class="acts"><button class="btn pri" type="submit">${ic('check')}Aprobar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div>`}</form>`,{mount:s=>{
    const F=s.querySelector('form');F.addEventListener('submit',async e=>{e.preventDefault();
     const como=new FormData(F).get('como');
-    if(como==='uno'||(c.partes||[]).length<2){await mutT(id,x=>{x.total=r.total;x.estadoProd='produccion'});syncCal(id);toast('Paquete aprobado.');verT(id);return}
+    if(como==='uno'||(c.partes||[]).length<2){await mutT(id,x=>{x.total=r.total;confirmarT(x)});syncCal(id);toast('Paquete aprobado.');verT(id);return}
     const sumas=c.partes.map(p=>calcPrecio(p,m).total),suma=sumas.reduce((a,b)=>a+b,0)||1,fac=r.total/suma;
     const netos=sumas.map(v=>r2(v*fac));netos[0]=r2(r.total-netos.slice(1).reduce((a,b)=>a+b,0));
     const pctAd=num(t.total)>0&&num(t.adelantoReq)>0?num(t.adelantoReq)/num(t.total):0;
@@ -2159,7 +2171,7 @@ function fAprobar(id){
      await guardar('trabajos',nt).catch(()=>{});
     }
     const p0=c.partes[0];
-    await mutT(id,x=>{x.titulo=tit(p0);x.tipo=nombre(p0);x.total=netos[0];x.estadoProd='produccion';x.cotDe={trabajo:id,num:c.num,parte:0};if(p0.precioModo==='porTema')x.temas=Math.max(1,parseInt(p0.cantidad,10)||1);if(pctAd)x.adelantoReq=r2(netos[0]*pctAd)});
+    await mutT(id,x=>{x.titulo=tit(p0);x.tipo=nombre(p0);x.total=netos[0];confirmarT(x);x.cotDe={trabajo:id,num:c.num,parte:0};if(p0.precioModo==='porTema')x.temas=Math.max(1,parseInt(p0.cantidad,10)||1);if(pctAd)x.adelantoReq=r2(netos[0]*pctAd)});
     syncCal(id);toast(`Paquete aprobado: quedó en ${c.partes.length} trabajos. Ponles fecha a los nuevos.`);verT(id);
    })}});
   return;
@@ -2173,7 +2185,7 @@ function fAprobar(id){
   const F=s.querySelector('form'),leer=()=>{const D=new FormData(F),ops=D.getAll('op');return {...c,alt:String(D.get('alt')||c.alt||''),opcionales:(c.opcionales||[]).map(o=>({...o,ok:ops.includes(o.id)}))}};
   const pinta=()=>{s.querySelector('#ap-desg').innerHTML=htmlDesglose(calcPrecio(leer(),m),m)};pinta();F.addEventListener('change',pinta);
   F.addEventListener('submit',e=>{e.preventDefault();const n=leer();if(n.precioModo!=='porTema'&&(n.alternativas||[]).length&&!n.alt){s.querySelector('#ap-err').textContent='Elige la opción que aprobó el cliente.';return}
-   mutT(id,x=>{x.cot=n;x.total=calcPrecio(n,m).total;x.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.');verT(id)});
+   mutT(id,x=>{x.cot=n;x.total=calcPrecio(n,m).total;confirmarT(x)}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.');verT(id)});
  }});
 }
 
@@ -2384,6 +2396,8 @@ function fAjustes(){
   <p class="hint" id="acalh">Para usar tu rosa palo (#d81b60), crea en Google Calendar un calendario llamado "Rodajes", ponle ese color y elígelo aquí. Con el color en "Auto", los eventos toman el color de ese calendario.</p>`:''}
   <label>Color de los rodajes en Google Calendar</label>${swatches('colRodaje',S.aj.colRodaje||'',true,'Color del calendario')}
   <label>Color de las entregas en Google Calendar</label>${swatches('colEntrega',S.aj.colEntrega||'',true,'Color del calendario')}
+  <label>Color de las cotizaciones (“Por confirmar”)</label>${swatches('colCot',S.aj.colCot||'',true,'Igual que los rodajes')}
+  <p class="hint">Al confirmarse el trabajo (al aprobar la cotización o registrar un pago) el evento pasa al color de los rodajes.</p>
   <p class="hint">Cada trabajo puede tener su propio color. Los eventos que ya existen cambian de color cuando los vuelves a sincronizar.</p>
   <label for="ae">Equipo</label><input id="ae" name="equipo" value="${esc(S.aj.equipo)}" placeholder="Nombres separados por comas: Ana, Jorge, Luis">
   <p class="hint">Para elegir rápido quién pagó un gasto y saber a quién hay que devolverle.</p>
@@ -2430,7 +2444,7 @@ function fAjustes(){
   s.querySelector('#atm').addEventListener('change',e=>{tema=e.target.value;try{localStorage.setItem('cp-tema',tema)}catch(x){}if(tema)aplicaTema();else delete document.documentElement.dataset.theme});
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const F=new FormData(e.target);const g=parseInt(F.get('gracia'),10);
    const calAntes=S.aj.calId||'';
-   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||15),cotPrefijo:String(F.get('cotPrefijo')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'EMS',cotSig:Math.max(1,parseInt(F.get('cotSig'),10)||1),cotAnio:F.has('cotAnio'),tc:{...(S.aj.tc||{}),USD:num(F.get('tcUSD'))||undefined,EUR:num(F.get('tcEUR'))||undefined},tcAuto:F.has('tcAuto'),tcFecha:(num(F.get('tcUSD'))!==num((S.aj.tc||{}).USD)||num(F.get('tcEUR'))!==num((S.aj.tc||{}).EUR))?hoy():S.aj.tcFecha,cotContacto:String(F.get('cotContacto')||'').trim(),firma:String(F.get('firma')??'').trim(),tplCot:String(F.get('tplCot')||'').trim()||MSG_COT_DEF,cotTerminos:String(F.get('cotTerminos')??'').trim()});
+   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),colCot:String(F.get('colCot')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||15),cotPrefijo:String(F.get('cotPrefijo')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'EMS',cotSig:Math.max(1,parseInt(F.get('cotSig'),10)||1),cotAnio:F.has('cotAnio'),tc:{...(S.aj.tc||{}),USD:num(F.get('tcUSD'))||undefined,EUR:num(F.get('tcEUR'))||undefined},tcAuto:F.has('tcAuto'),tcFecha:(num(F.get('tcUSD'))!==num((S.aj.tc||{}).USD)||num(F.get('tcEUR'))!==num((S.aj.tc||{}).EUR))?hoy():S.aj.tcFecha,cotContacto:String(F.get('cotContacto')||'').trim(),firma:String(F.get('firma')??'').trim(),tplCot:String(F.get('tplCot')||'').trim()||MSG_COT_DEF,cotTerminos:String(F.get('cotTerminos')??'').trim()});
    guardarAj();cerrar();
    const enCal=S.trabajos.filter(t=>t.cal&&(t.cal.on||t.cal.ev)&&t.estadoProd!=='cancelado');
    if(mcpNs&&enCal.length&&(S.aj.calId||'')!==calAntes){toast(`Moviendo ${enCal.length} ${enCal.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);(async()=>{for(const t of enCal){await syncCal(t.id);await espera(400)}toast('Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')})()}
@@ -2564,7 +2578,7 @@ const A={
  modelos:()=>fModelos(),editarModelo:id=>fModelo(id),nuevoModelo:()=>fModelo(),catalogo:()=>fCatalogo(),borrarModelo:id=>{S.aj={...S.aj,modelos:modelos().filter(x=>x.id!==id)};guardarAj();toast('Modelo borrado.');fModelos()},
  fCot:id=>fCot(id),
  nuevoEq:id=>fEquipo(id),editarEq:(id,b)=>fEquipo(id,b.dataset.p),borrarEq:(id,b)=>{mutT(id,n=>{n.equipo=(n.equipo||[]).filter(x=>x.id!==b.dataset.p)});toast('Quitado del equipo.');verT(id)},
- aprobar:id=>{const t=S.trabajos.find(x=>x.id===id);if(t&&t.cot&&(t.cot.modo==='paquete'&&(t.cot.partes||[]).length||t.cot.modo==='modelo'&&((t.cot.alternativas||[]).length||(t.cot.opcionales||[]).length))){fAprobar(id);return}mutT(id,n=>{n.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.')},
+ aprobar:id=>{const t=S.trabajos.find(x=>x.id===id);if(t&&t.cot&&(t.cot.modo==='paquete'&&(t.cot.partes||[]).length||t.cot.modo==='modelo'&&((t.cot.alternativas||[]).length||(t.cot.opcionales||[]).length))){fAprobar(id);return}mutT(id,n=>{confirmarT(n)}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.')},
  entregar:id=>{mutT(id,n=>{n.estadoProd='entregado';n.entregadoEl=hoy()});toast(`Entregado. La cancelación vence en ${G()} ${G()===1?'día':'días'}.`)},
  pago:id=>fPago(id),gasto:id=>fGasto(id),
  editarPago:(id,b)=>fPago(id,b.dataset.p),
@@ -2628,6 +2642,7 @@ let raf=0;function render(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;p
 function pintar(){
  if(/^#t-/.test(location.hash)){const id=location.hash.slice(3);if(S.trabajos.some(x=>x.id===id)){history.replaceState(null,'','#trabajos');setTimeout(()=>verT(id),0)}}
  revisarAvisos();
+ revisarCalEstados();
  if(S.modo==='nube'&&!tcRevisado){tcRevisado=true;setTimeout(()=>actualizarTC(false),4000)}
  if(pedidoNuevo&&S.modo==='nube'){const k=pedidoNuevo;pedidoNuevo='';try{const u=new URL(location.href);u.searchParams.delete('nuevo');history.replaceState(null,'',u.pathname+u.search+u.hash)}catch(e){}
   setTimeout(()=>{if(k==='gasto')A.gastoRapido();else if(k==='pago')A.pagoRapido();else if(k==='trabajo')A.nuevoT();else if(k==='buscar')buscar()},200)}
