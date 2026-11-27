@@ -672,6 +672,42 @@ async def duracion_video(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def validez_cotizacion(p):
+    import datetime
+    b, ctx, pg = await nueva(p)
+    hoy = await pg.evaluate("new Intl.DateTimeFormat('en-CA',{timeZone:'America/Lima'}).format(new Date())")
+    d = lambda n: (datetime.date.fromisoformat(hoy) + datetime.timedelta(days=n)).isoformat()
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=videoclip]'); await pg.wait_for_timeout(300)
+    await pg.fill('#ft', 'Valida Uno'); await pg.fill('#far', 'Grupo V'); await pg.fill('#ff', d(30))
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    comprobar(await pg.input_value('#qv') == d(5), 'la validez por defecto es de 5 días: ' + await pg.input_value('#qv'))
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=videoclip]'); await pg.wait_for_timeout(300)
+    await pg.fill('#ft', 'Valida Dos'); await pg.fill('#far', 'Grupo W'); await pg.fill('#ff', d(3))
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    comprobar(await pg.input_value('#qv') == d(2), 'con rodaje en 3 días vence el día antes del rodaje')
+    await pg.fill('#qe', d(-10)); await pg.dispatch_event('#qe', 'change'); await pg.fill('#qv', d(-2))
+    await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(300)
+    fila = pg.locator('.cqrow', has_text='Valida Dos')
+    comprobar('Vencida' in await fila.inner_text() and await fila.locator('[data-a=cotLiberar]').count() == 1, 'Inicio marca la cotización vencida con “Liberar la fecha”')
+    await fila.locator('[data-a=cotExtender]').click(); await pg.wait_for_timeout(500)
+    t = next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == 'Valida Dos')
+    comprobar(t['cot']['valida'] == d(5), 'extender da 5 días más desde hoy: ' + t['cot']['valida'])
+    comprobar('Vencida' not in await pg.locator('.cqrow', has_text='Valida Dos').inner_text(), 'deja de verse vencida')
+    await pg.click('.cqrow:has-text("Valida Uno") h3'); await pg.wait_for_timeout(300)
+    await pg.click('#sheet [data-a=fCot]'); await pg.wait_for_timeout(300)
+    await pg.fill('#qv', d(-1)); await pg.click('#sheet button[name=ir][value=""]'); await pg.wait_for_timeout(500)
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(300)
+    lib = pg.locator('.cqrow', has_text='Valida Uno').locator('[data-a=cotLiberar]')
+    await lib.click(); await lib.click(); await pg.wait_for_timeout(600)
+    t = next(x for x in servidor(await estado(pg), 'trabajos') if x['titulo'] == 'Valida Uno')
+    comprobar(t['estadoProd'] == 'cancelado' and t['cot'].get('liberada') == hoy, 'liberar la fecha la deja como no aceptada')
+    comprobar(await pg.locator('.cqrow', has_text='Valida Uno').count() == 0, 'ya no aparece en Inicio')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

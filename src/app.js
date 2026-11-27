@@ -29,7 +29,7 @@ const TPL={
  tplCancel:'Hola {cliente}, ¿cómo estás? Te escribo por "{trabajo}": quedaría pendiente la cancelación de {monto}. Quedo atento a tu confirmación. ¡Gracias!'
 };
 const TERM_DEF='• Precios en la moneda indicada; no incluyen IGV salvo que se diga lo contrario.\n• Para separar la fecha se pide el adelanto indicado en la forma de pago.\n• El saldo se paga a la entrega del material final.\n• Incluye hasta 2 rondas de cambios en edición; cambios adicionales se cotizan aparte.\n• Cambios de fecha con al menos 72 horas de aviso; el adelanto no es reembolsable.';
-const DEF_AJ={cotPrefijo:'EMS',cotSig:1148,cotAnio:true,cotValidez:15,cotTerminos:TERM_DEF,cotContacto:'',negocio:'',moneda:'PEN',gracia:3,equipo:'',invFrec:'',tipoDef:'Videoclip',colRodaje:'4',colEntrega:'4',colCot:'8',calId:'',calNom:'',...TPL};
+const DEF_AJ={cotPrefijo:'EMS',cotSig:1148,cotAnio:true,cotValidez:5,cotTerminos:TERM_DEF,cotContacto:'',negocio:'',moneda:'PEN',gracia:3,equipo:'',invFrec:'',tipoDef:'Videoclip',colRodaje:'4',colEntrega:'4',colCot:'8',calId:'',calNom:'',...TPL};
 const GCOL=[['1','Lavanda','#7986cb'],['2','Salvia','#33b679'],['3','Uva','#8e24aa'],['4','Flamenco','#e67c73'],['5','Plátano','#f6bf26'],['6','Mandarina','#f4511e'],['7','Pavo real','#039be5'],['8','Grafito','#616161'],['9','Arándano','#3f51b5'],['10','Albahaca','#0b8043'],['11','Tomate','#d50000']];
 const colHex=id=>{const c=GCOL.find(x=>x[0]===String(id));return c?c[2]:''};
 const colNom=id=>{const c=GCOL.find(x=>x[0]===String(id));return c?c[1]:(S.aj.calId?'Color del calendario '+(S.aj.calNom||''):'Predeterminado')};
@@ -603,6 +603,7 @@ function dTrabajo(id){
  <dl class="kv">${nomArt(t)?`<div><dt>Artista o grupo</dt><dd style="white-space:normal">${esc(nomArt(t))}</dd></div>`:''}${temasTxt(t)?`<div><dt>Temas a grabar</dt><dd style="white-space:normal">${temasTxt(t)}${t.temasNom?'<br><span class="hint">'+esc(t.temasNom)+'</span>':''}</dd></div>`:''}<div><dt>Monto del trabajo</dt><dd>${fmt(tot,m)}</dd></div>${descuentoT(t)>0?`<div><dt>Precio de lista</dt><dd style="white-space:normal">${fmt(precioListaT(t),m)}<br><span class="hint">Descuento ${fmt(descuentoT(t),m)} (${Math.round(descuentoT(t)/precioListaT(t)*100)}%)${ocultaDesc(t.cot)?' · no sale en el PDF':''}</span></dd></div>`:''}${t.retencion?`<div><dt>Retención 4ta (8 %)</dt><dd>− ${fmt(retT(t),m)}</dd></div><div><dt>Neto a cobrar</dt><dd>${fmt(cobrarT(t),m)}</dd></div>`:''}${rb>0?`<div><dt>Gastos a reembolsar</dt><dd>+ ${fmt(rb,m)}</dd></div>`:''}<div><dt>Cobrado</dt><dd>${fmt(pg,m)}</dd></div><div><dt>Fecha del trabajo</dt><dd>${fd(t.fecha)||'—'}</dd></div><div><dt>${t.entregadoEl?'Entregado el':'Fecha de entrega'}</dt><dd>${fd(baseEntrega(t))||'—'}</dd></div><div><dt>Estado</dt><dd>${PROD[t.estadoProd]||'—'}</dd></div>${nDias(t)>1?`<div><dt>Rodaje · ${nDias(t)} días</dt><dd style="white-space:normal">${esc(textoDias(t,'\n')).replace(/\n/g,'<br>')}</dd></div>`:horario(t)?`<div><dt>Horario</dt><dd>${esc(horario(t))}</dd></div>`:''}${t.lugar?`<div><dt>Lugar</dt><dd style="white-space:normal">${esc(t.lugar)}</dd></div>`:''}</dl>
  ${tagsHtml(t)}
  ${calBloque(t)}
+ ${e==='cotizado'&&t.cot&&t.cot.valida?`<p class="hint qval">${cotVencida(t)?`<span class="red">La cotización venció el ${fd(t.cot.valida)}.</span> <button type="button" class="lnk" data-a="cotExtender" data-id="${id}">Extender ${num(S.aj.cotValidez)||5} días</button> · <button type="button" class="lnk" data-a="cotLiberar" data-id="${id}" data-c="1" data-cl="¿Liberar la fecha?">Liberar la fecha</button>`:`Válida hasta el ${fd(t.cot.valida)}.`}</p>`:''}
  ${e==='cotizado'&&cotLista(t)?`<p class="hint qenv">${cotEnviada(t)?`Enviada al cliente el ${fd(cotEnviada(t))}${diasDesde(cotEnviada(t))>=SEG_DIAS?' · <span class="red">sin respuesta</span>':''}. <button type="button" class="lnk" data-a="cotEnv" data-id="${id}">Quitar la marca</button>`:`Todavía no está marcada como enviada. <button type="button" class="lnk" data-a="cotEnv" data-id="${id}">Ya la envié</button>`}</p>`:''}
  <div class="acts">
   ${e==='cotizado'?`<button class="btn pri" data-a="aprobar" data-id="${id}">${ic('check')}Cotización aprobada</button>${cotLista(t)?`<button class="btn" data-a="cotWa" data-id="${id}">${ic('wa')}Enviar cotización ${esc(t.cot.num||'')}</button><button class="btn" data-a="cotPdf" data-id="${id}">${ic('list')}PDF</button><button class="btn" data-a="fCot" data-id="${id}">${ic('edit')}Editar cotización</button>`:`<button class="btn" data-a="fCot" data-id="${id}">${ic('list')}Armar cotización</button>`}`:e==='cancelado'?'':cotLista(t)?`<button class="btn" data-a="cotPdf" data-id="${id}">${ic('list')}Cotización ${esc(t.cot.num||'')}</button><button class="btn" data-a="fCot" data-id="${id}">${ic('edit')}Editar cotización</button>`:`<button class="btn" data-a="fCot" data-id="${id}">${ic('list')}Cotización PDF</button>`}
@@ -1065,7 +1066,7 @@ function fCotPartidas(id){
   <div class="chips presets" id="qpre">${PARTIDAS.map(x=>`<button type="button" class="chip" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>
   <div class="qtot"><span>Total</span><b id="qtotal">${fmtR(0,m)}</b></div>
   <label class="chk"><input type="checkbox" name="usarTotal" checked> Usar este total como monto del trabajo</label>
-  <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c0.valida||sumarDias(emit,num(S.aj.cotValidez)||15))}"></div></div>
+  <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c0.valida||validaDef(emit,t))}"></div></div>
   <label for="qt">Términos y condiciones</label><textarea id="qt" name="terminos" rows="6">${esc(c0.terminos??S.aj.cotTerminos??TERM_DEF)}</textarea>
   <p class="hint">La forma de pago (adelanto y cuotas) se toma del trabajo. Los términos por defecto se cambian en Ajustes.</p>
   <p class="err" id="qerr" role="alert"></p>
@@ -1080,7 +1081,7 @@ function fCotPartidas(id){
   box.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b){leer();items.splice(+b.dataset.r,1);if(!items.length)items.push({id:uid(),concepto:'',cant:1,precio:''});pinta()}});
   s.querySelector('#qadd').addEventListener('click',()=>{leer();items.push({id:uid(),concepto:'',cant:1,precio:''});pinta();box.querySelector('.qrow:last-child [data-f=c]').focus()});
   s.querySelector('#qpre').addEventListener('click',e=>{const b=e.target.closest('[data-q]');if(!b)return;leer();const vacia=items.find(x=>!x.concepto&&!num(x.precio));if(vacia)vacia.concepto=b.dataset.q;else items.push({id:uid(),concepto:b.dataset.q,cant:1,precio:''});pinta();const ps=[...box.querySelectorAll('[data-f=p]')].find((x,i)=>items[i].concepto===b.dataset.q&&!x.value);ps&&ps.focus()});
-  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(S.aj.cotValidez)||15)});
+  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=validaDef(e.target.value,t)});
   F.addEventListener('submit',async e=>{e.preventDefault();leer();
    const L=items.filter(x=>x.concepto.trim()||num(x.precio)>0).map(x=>({id:x.id,concepto:x.concepto.trim()||'Partida',cant:num(x.cant)||1,precio:r2(num(x.precio))}));
    if(!L.length||totCot({items:L})<=0){err.textContent='Agrega al menos una partida con precio.';return}
@@ -1141,7 +1142,7 @@ const MODELOS_DEF=[
   fechaEtiqueta:'Fecha tentativa de rodaje',notaFecha:'',
   entrega:'15 días hábiles posteriores al rodaje y a la recepción del audio master final.',
   material:['Video final en resolución 4K'],
-  pago:['50% a la firma del contrato','50% contra entrega del producto final'],validez:15},
+  pago:['50% a la firma del contrato','50% contra entrega del producto final']},
  {id:'envivo',nombre:'Sesión en vivo',titulo:'Cotización – Realización de una sesión de video en vivo',etiqueta:'Cliente',precio:8000,
   intro:'A continuación, se detalla la cotización para la producción y filmación de una sesión musical en vivo, a realizarse en la ciudad de {ciudad}, contemplando aproximadamente {canciones}, con posibilidad de registrar canciones adicionales dentro del tiempo de producción contratado.',
   servicio:'Producción y filmación de sesión musical en vivo',
@@ -1156,7 +1157,7 @@ const MODELOS_DEF=[
   fechaEtiqueta:'Fecha tentativa de rodaje',notaFecha:'La fecha definitiva deberá ser confirmada y coordinada previamente entre ambas partes.',
   entrega:'20 días hábiles posteriores al rodaje y a la recepción del audio master final y demás materiales necesarios para iniciar la edición.',
   material:['Video final en resolución 4K'],
-  pago:['50% a la firma del contrato','50% contra entrega del producto final'],validez:15},
+  pago:['50% a la firma del contrato','50% contra entrega del producto final']},
  {id:'boda',nombre:'Boda',titulo:'Proforma – Cobertura audiovisual de boda',etiqueta:'Novios',precio:10000,
   intro:'',servicio:'Servicios principales',
   incluye:['Sesión de preboda: una cámara. Fecha y locación coordinadas con los novios.','Cobertura de la boda: filmación con cuatro cámaras.','Ceremonia completa: edición independiente desde el ingreso de los novios hasta la salida, con registro de votos, lecturas y audio de la ceremonia. La calidad del audio dependerá de las condiciones del lugar y de los accesos disponibles para instalar micrófonos o grabadoras.','Cobertura completa de la recepción: registro audiovisual de los momentos programados, con cuatro cámaras, hasta la hora acordada.','Edición y corrección de color.'],
@@ -1169,7 +1170,7 @@ const MODELOS_DEF=[
   fechaEtiqueta:'Fecha del evento',notaFecha:'',
   entrega:'20 días hábiles después de la boda.',
   material:['Preboda','Ceremonia completa'],
-  pago:['50% para reservar la fecha','50% contra entrega'],validez:15}
+  pago:['50% para reservar la fecha','50% contra entrega']}
 ];
 const CATALOGO_DEF=[
  ['Cámara Sony FX3 Cinema Line (grabación en 4K)',0],['Lentes de cine Nisi Athena',0],['Drone DJI Mavic 2 Pro',0],['Iluminación básica (2 luces LED + difusores y soportes)',0],['Trípodes y estabilizadores',0],['Equipo técnico (3 personas)',0],
@@ -1185,7 +1186,9 @@ MODELOS_DEF.forEach(x=>Object.assign(x,PRECIO_DEF[x.id]||{}));
 const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>textosActuales({...(x.precioModo?{}:PRECIO_DEF[x.id]||{}),...x,modelo:x.id})):MODELOS_DEF;
 const catalogo=()=>Array.isArray(S.aj.catalogo)?S.aj.catalogo:CATALOGO_DEF;
 const lineas=v=>String(v||'').split('\n').map(x=>x.replace(/^\s*[•·\-*]\s*/,'').trim()).filter(Boolean);
-const SEG_DIAS=7;
+const SEG_DIAS=3;
+function validaDef(emit,t,dias){const d=num(dias)||num(S.aj.cotValidez)||5;let v=sumarDias(emit,d);const f=t&&t.fecha;if(f){const antes=sumarDias(f,-1);if(antes<v)v=antes>emit?antes:emit}return v}
+const cotVencida=t=>t&&t.estadoProd==='cotizado'&&t.cot&&t.cot.valida&&t.cot.valida<hoy();
 const diasDesde=f=>f?Math.max(0,Math.round((new Date(hoy()+'T12:00:00')-new Date(f+'T12:00:00'))/864e5)):0;
 const haceTxt=n=>n===0?'hoy':n===1?'ayer':'hace '+n+' días';
 const cotEnviada=t=>(t&&t.cot&&t.cot.enviada)||'';
@@ -1193,8 +1196,10 @@ const cotPendientes=()=>S.trabajos.filter(t=>t.estadoProd==='cotizado').sort((a,
 function marcarEnviada(id){const t=S.trabajos.find(x=>x.id===id);if(!t||!t.cot||t.cot.enviada===hoy())return;mutT(id,x=>{x.cot={...x.cot,enviada:hoy()}}).catch(()=>{})}
 function filaQ(t){
  const e=cotEnviada(t),d=diasDesde(e),cre=(t.cot&&t.cot.emitida)||(t.creado?new Date(t.creado).toLocaleDateString('en-CA'):'');
- const est=e?(d>=SEG_DIAS?`<small class="red">Sin respuesta · enviada ${haceTxt(d)}</small>`:`<small>Enviada ${haceTxt(d)}</small>`):`<small>Sin enviar${cre?' · creada '+haceTxt(diasDesde(cre)):''}</small>`;
+ const venc=cotVencida(t),val=t.cot&&t.cot.valida;
+ const est=venc?`<small class="red">Vencida el ${fd(val)} · la fecha sigue reservada</small>`:(e?(d>=SEG_DIAS?`<small class="red">Sin respuesta · enviada ${haceTxt(d)}</small>`:`<small>Enviada ${haceTxt(d)}</small>`):`<small>Sin enviar${cre?' · creada '+haceTxt(diasDesde(cre)):''}</small>`)+(val&&!venc?`<small>Válida hasta el ${fd(val)}</small>`:'');
  const lista=cotLista(t);
+ if(venc)return `<article class="row cqrow" data-a="verT" data-id="${t.id}">${avT(t)}<div class="rm"><h3>${esc(t.titulo)}</h3><p>${esc(quien(t))}${t.cot&&t.cot.num?' · '+esc(t.cot.num):''}${t.fecha?' · rodaje '+fd(t.fecha):''}</p><div class="rmeta">${est}</div></div><div class="ra"><b>${num(t.total)>0?fmt(cobrarT(t),t.moneda):'Sin monto'}</b></div><div class="rq"><button class="btn sm" data-a="cotLiberar" data-id="${t.id}" data-c="1" data-cl="¿Liberar la fecha?">${ic('del')}Liberar la fecha</button><button class="btn sm" data-a="cotExtender" data-id="${t.id}">Extender ${num(S.aj.cotValidez)||5} días</button><button class="btn sm pri" data-a="aprobar" data-id="${t.id}">${ic('check')}Aprobada</button></div></article>`;
  return `<article class="row cqrow" data-a="verT" data-id="${t.id}">${avT(t)}<div class="rm"><h3>${esc(t.titulo)}</h3><p>${esc(quien(t))}${t.cot&&t.cot.num?' · '+esc(t.cot.num):''}${t.fecha?' · rodaje '+fd(t.fecha):''}</p><div class="rmeta">${est}</div></div><div class="ra"><b>${num(t.total)>0?fmt(cobrarT(t),t.moneda):'Sin monto'}</b></div><div class="rq">${lista?`<button class="btn sm" data-a="cotWa" data-id="${t.id}">${ic('wa')}${e?'Reenviar':'Enviar'}</button>`:`<button class="btn sm" data-a="fCot" data-id="${t.id}">${ic('list')}Armar</button>`}<button class="btn sm pri" data-a="aprobar" data-id="${t.id}">${ic('check')}Aprobada</button></div></article>`;
 }
 const cotLista=t=>!!(t&&t.cot&&(t.cot.modo==='modelo'||(t.cot.modo==='paquete'&&(t.cot.partes||[]).length)||(t.cot.items||[]).length));
@@ -1367,7 +1372,7 @@ function htmlEditorCot(c,t,m,modo){
   <label for="ce-ent">Tiempo de entrega</label><input id="ce-ent" name="entrega" value="${esc(c.entrega||'')}">
   ${ta('material','Material de entrega (uno por línea)',c.material,3)}
   ${modo==='parte'?`<input type="hidden" name="pago" value="${esc((c.pago||[]).join('\n'))}">`:ta('pago','Forma de pago (una por línea)',c.pago,2,'Si una línea tiene un porcentaje (50%), el PDF le agrega el monto.')}
-  ${modo==='modelo'?`<label for="ce-val">Validez (días)</label><input id="ce-val" name="validez" inputmode="numeric" value="${esc(c.validez||15)}">`:''}
+
  </div>`;
 }
 function montarEditorCot(s,m,onCambio,enTrabajo){
@@ -1444,7 +1449,7 @@ function fCotModelo(id,modeloId,parte){
   ${prev&&!esParte?'<p class="hint">Cambiar de modelo reemplaza el contenido por el del modelo elegido.</p>':''}
   ${htmlEditorCot(c,t,m,esParte?'parte':'cot')}
   ${esParte?'':`<label class="chk"><input type="checkbox" name="usarTotal" checked> Usar el total como monto del trabajo</label>
-  <div class="g3"><div><label for="qn">Número</label><input id="qn" name="numero" value="${esc((prev&&prev.num)||(t.cot&&t.cot.num)||'')}" placeholder="${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}" autocapitalize="characters"></div><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc((prev&&prev.valida)||sumarDias(emit,num(md.validez)||num(S.aj.cotValidez)||15))}"></div></div>
+  <div class="g3"><div><label for="qn">Número</label><input id="qn" name="numero" value="${esc((prev&&prev.num)||(t.cot&&t.cot.num)||'')}" placeholder="${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}" autocapitalize="characters"></div><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc((prev&&prev.valida)||validaDef(emit,t))}"></div></div>
   <p class="hint">Si dejas el número vacío, se pone el siguiente automáticamente.</p>
   <p class="hint">${t.fecha?esc(c.fechaEtiqueta||'Fecha')+': '+esc(fechasRodaje(t))+' (se toma del trabajo).':'El trabajo aún no tiene fecha: en el PDF saldrá “Por definir”.'}</p>`}
   <p class="err" id="ce-err" role="alert"></p>
@@ -1457,7 +1462,7 @@ function fCotModelo(id,modeloId,parte){
    else if(k==='__paquete'){const actual=leerEditorCot(s,c);const p0={...actual,modelo:md.id,nombre:actual.nombre||md.nombre};delete p0.num;delete p0.emitida;delete p0.valida;
     mutT(id,x=>{x.cot={modo:'paquete',num:(x.cot&&x.cot.num)||'',titulo:'Cotización – Paquete de producción audiovisual',etiqueta:p0.etiqueta||'Cliente',ciudad:p0.ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',partes:[p0],descuento:{tipo:'monto',valor:0,motivo:'Descuento por paquete'},consideraciones:p0.consideraciones||[],pago:p0.pago||[],emitida:(x.cot&&x.cot.emitida)||hoy(),valida:(x.cot&&x.cot.valida)||''}}).then(()=>fPaquete(id))}
    else fCotModelo(id,k,esParte?parte:undefined)});
-  const qe=s.querySelector('#qe');if(qe)qe.addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(md.validez)||num(S.aj.cotValidez)||15)});
+  const qe=s.querySelector('#qe');if(qe)qe.addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=validaDef(e.target.value,t)});
   F.addEventListener('submit',async e=>{e.preventDefault();
    const n={...leerEditorCot(s,c),modelo:md.id},D=new FormData(F),r=calcPrecio(n,m);
    if(!(r.total>0)){err.textContent=n.precioModo==='porTema'?'Escribe el precio por '+uniTxt(n,1)+'.':'Escribe el precio total.';return}
@@ -1584,7 +1589,7 @@ function fPaquete(id){
   <div class="acts" style="margin:4px 0"><button type="button" class="btn sm" id="pq-junta">Juntar las de todas las partes</button></div>
   <label for="pq-pag">Forma de pago (una por línea)</label><textarea id="pq-pag" name="pago" rows="2">${esc((c.pago||[]).join('\n'))}</textarea>
   <label class="chk"><input type="checkbox" name="usarTotal" checked> Usar el total del paquete como monto del trabajo</label>
-  <div class="g3"><div><label for="qn">Número</label><input id="qn" name="numero" value="${esc(c.num||'')}" placeholder="${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}" autocapitalize="characters"></div><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c.valida||sumarDias(emit,num(S.aj.cotValidez)||15))}"></div></div>
+  <div class="g3"><div><label for="qn">Número</label><input id="qn" name="numero" value="${esc(c.num||'')}" placeholder="${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}" autocapitalize="characters"></div><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c.valida||validaDef(emit,t))}"></div></div>
   <p class="hint">Si dejas el número vacío, se pone el siguiente automáticamente.</p>
   <p class="err" id="pq-err" role="alert"></p>
   <div class="acts"><button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div></form>`,{mount:s=>{
@@ -1600,7 +1605,7 @@ function fPaquete(id){
    const mb=e.target.closest('.segm [data-mod]');if(mb){fCotModelo(id,mb.dataset.mod);return}
   },true);
   s.querySelector('#pq-junta').addEventListener('click',()=>{const tx=s.querySelector('#pq-con'),todas=[...lineas(tx.value)];for(const p of S.trabajos.find(x=>x.id===id).cot.partes||[])for(const l of p.consideraciones||[])if(!todas.some(x=>nrm(x)===nrm(l)))todas.push(l);tx.value=todas.join('\n');toast('Consideraciones juntadas, sin repetir.')});
-  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(S.aj.cotValidez)||15)});
+  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=validaDef(e.target.value,t)});
   F.addEventListener('submit',async e=>{e.preventDefault();
    const n=leer(),r=calcPaquete(n,m);
    if(!(n.partes||[]).length||!(r.total>0)){s.querySelector('#pq-err').textContent='Agrega al menos un servicio con precio.';return}
@@ -1848,7 +1853,7 @@ function fAjustes(){
   <div class="avt"><label class="chk"><input type="checkbox" name="avCobros"${(S.aj.avisos||{}).cobros!==false?' checked':''}> Cobros: el día que toca y si se vence</label>
   <label class="chk"><input type="checkbox" name="avEntregas"${(S.aj.avisos||{}).entregas!==false?' checked':''}> Entregas: el día antes</label>
   <label class="chk"><input type="checkbox" name="avRodajes"${(S.aj.avisos||{}).rodajes!==false?' checked':''}> Rodajes: el día antes</label>
-  <label class="chk"><input type="checkbox" name="avCotSeg"${(S.aj.avisos||{}).cotSeg!==false?' checked':''}> Cotizaciones sin respuesta: a los ${SEG_DIAS} días de enviarlas</label></div>
+  <label class="chk"><input type="checkbox" name="avCotSeg"${(S.aj.avisos||{}).cotSeg!==false?' checked':''}> Cotizaciones: sin respuesta a los ${SEG_DIAS} días de enviarlas y al vencer</label></div>
   <p class="hint">Llegan a las 8 a.m. Muestran el trabajo y el artista, nunca montos ni datos del cliente. Guarda los ajustes después de cambiar estas casillas.</p>
   <h4>Atajos y Siri</h4><div id="atajobox" class="cuenta"></div>`:''}
   <label class="chk"><input type="checkbox" id="aoc"${ocultarInicio?' checked':''}> Ocultar los montos al abrir la app en este equipo</label>
@@ -1877,7 +1882,7 @@ function fAjustes(){
   <h4>Cotizaciones</h4>
   <div class="g3"><div><label for="anp">Prefijo</label><input id="anp" name="cotPrefijo" value="${esc(S.aj.cotPrefijo||'EMS')}" autocapitalize="characters" maxlength="8"></div><div><label for="ans">Próximo número</label><input id="ans" name="cotSig" type="number" min="1" step="1" inputmode="numeric" value="${esc(proximoNumCot())}"></div><div><label class="chk" style="margin-top:34px"><input type="checkbox" name="cotAnio"${S.aj.cotAnio!==false?' checked':''}> Con año</label></div></div>
   <p class="hint" id="anx">La próxima cotización será <b>${esc(formatoNumCot(proximoNumCot(),hoy().slice(0,4)))}</b>. El correlativo sigue subiendo cada año; no vuelve a empezar en enero.</p>
-  <div class="g2"><div><label for="acv">Validez (días)</label><input id="acv" name="cotValidez" inputmode="numeric" value="${esc(S.aj.cotValidez??15)}"></div><div><label for="acc">Contacto en el PDF</label><input id="acc" name="cotContacto" value="${esc(S.aj.cotContacto||'')}" placeholder="987 654 321 · correo · RUC"></div></div>
+  <div class="g2"><div><label for="acv">Validez (días)</label><input id="acv" name="cotValidez" inputmode="numeric" value="${esc(S.aj.cotValidez??5)}"></div><div><label for="acc">Contacto en el PDF</label><input id="acc" name="cotContacto" value="${esc(S.aj.cotContacto||'')}" placeholder="987 654 321 · correo · RUC"></div></div>
   <div class="acts" style="margin:4px 0 10px"><button type="button" class="btn" data-a="modelos">Modelos de cotización (${modelos().length})</button><button type="button" class="btn" data-a="catalogo">Catálogo de equipos</button></div>
   <label for="afi">Firma (una línea por renglón)</label><textarea id="afi" name="firma" rows="2">${esc(S.aj.firma??'José Payva Humalla\nRealizador Audiovisual')}</textarea>
   <label for="amc">Mensaje al enviar la cotización por WhatsApp</label><textarea id="amc" name="tplCot" rows="3">${esc(S.aj.tplCot||MSG_COT_DEF)}</textarea>
@@ -1916,7 +1921,7 @@ function fAjustes(){
   s.querySelector('#atm').addEventListener('change',e=>{tema=e.target.value;try{localStorage.setItem('cp-tema',tema)}catch(x){}if(tema)aplicaTema();else delete document.documentElement.dataset.theme});
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const F=new FormData(e.target);const g=parseInt(F.get('gracia'),10);
    const calAntes=S.aj.calId||'';
-   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),colCot:String(F.get('colCot')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes'),cotSeg:F.has('avCotSeg')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||15),cotPrefijo:String(F.get('cotPrefijo')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'EMS',cotSig:Math.max(1,parseInt(F.get('cotSig'),10)||1),cotAnio:F.has('cotAnio'),tc:{...(S.aj.tc||{}),USD:num(F.get('tcUSD'))||undefined,EUR:num(F.get('tcEUR'))||undefined},tcAuto:F.has('tcAuto'),tcFecha:(num(F.get('tcUSD'))!==num((S.aj.tc||{}).USD)||num(F.get('tcEUR'))!==num((S.aj.tc||{}).EUR))?hoy():S.aj.tcFecha,cotContacto:String(F.get('cotContacto')||'').trim(),firma:String(F.get('firma')??'').trim(),tplCot:String(F.get('tplCot')||'').trim()||MSG_COT_DEF,cotTerminos:String(F.get('cotTerminos')??'').trim()});
+   S.aj=normAj({...S.aj,negocio:String(F.get('negocio')||'').trim(),moneda:F.get('moneda')||'PEN',gracia:isFinite(g)?g:3,equipo:String(F.get('equipo')||'').trim(),colRodaje:String(F.get('colRodaje')??''),colEntrega:String(F.get('colEntrega')??''),colCot:String(F.get('colCot')??''),calId:String(F.get('calId')||''),calNom:F.get('calId')?String(F.get('calNom')||''):'',tipoDef:String(F.get('tipoDef')||'').trim(),invFrec:String(F.get('invFrec')||'').trim(),tplAdelanto:String(F.get('tplAdelanto')||'').trim()||TPL.tplAdelanto,tplCuota:String(F.get('tplCuota')||'').trim()||TPL.tplCuota,tplCancel:String(F.get('tplCancel')||'').trim()||TPL.tplCancel,avisos:{...(S.aj.avisos||{}),cobros:F.has('avCobros'),entregas:F.has('avEntregas'),rodajes:F.has('avRodajes'),cotSeg:F.has('avCotSeg')},cotValidez:Math.max(1,parseInt(F.get('cotValidez'),10)||5),cotPrefijo:String(F.get('cotPrefijo')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'EMS',cotSig:Math.max(1,parseInt(F.get('cotSig'),10)||1),cotAnio:F.has('cotAnio'),tc:{...(S.aj.tc||{}),USD:num(F.get('tcUSD'))||undefined,EUR:num(F.get('tcEUR'))||undefined},tcAuto:F.has('tcAuto'),tcFecha:(num(F.get('tcUSD'))!==num((S.aj.tc||{}).USD)||num(F.get('tcEUR'))!==num((S.aj.tc||{}).EUR))?hoy():S.aj.tcFecha,cotContacto:String(F.get('cotContacto')||'').trim(),firma:String(F.get('firma')??'').trim(),tplCot:String(F.get('tplCot')||'').trim()||MSG_COT_DEF,cotTerminos:String(F.get('cotTerminos')??'').trim()});
    guardarAj();cerrar();
    const enCal=S.trabajos.filter(t=>t.cal&&(t.cal.on||t.cal.ev)&&t.estadoProd!=='cancelado');
    if(mcpNs&&enCal.length&&(S.aj.calId||'')!==calAntes){toast(`Moviendo ${enCal.length} ${enCal.length===1?'trabajo':'trabajos'} a ${S.aj.calNom||'tu calendario principal'}…`);(async()=>{for(const t of enCal){await syncCal(t.id);await espera(400)}toast('Listo: tus trabajos están en '+(S.aj.calNom||'tu calendario principal')+'.')})()}
@@ -1962,7 +1967,8 @@ function planAvisos(){
    if(c.tipo!=='entrega')add(c.vence,'v-'+t.id+'-'+c.id,c.tipo==='adelanto'?'Hoy toca cobrar el adelanto':'Hoy vence: '+c.concepto,nom,url);
    add(sumarDias(c.vence,G()+1),'x-'+t.id+'-'+c.id,'Pago vencido: '+c.concepto,nom,url)}
   if(A.entregas!==false&&t.estadoProd==='produccion'&&t.entrega)add(sumarDias(t.entrega,-1),'e-'+t.id,'Mañana entregas',nom+(saldo(t)>0.004?' · cobrar al entregar':''),url);
-  if(A.cotSeg!==false&&t.estadoProd==='cotizado'&&cotEnviada(t))add(sumarDias(cotEnviada(t),SEG_DIAS),'q-'+t.id+'-'+cotEnviada(t),'Cotización sin respuesta',nom+' · enviada hace '+SEG_DIAS+' días',url);
+  if(A.cotSeg!==false&&t.estadoProd==='cotizado'&&t.cot&&t.cot.valida)add(sumarDias(t.cot.valida,1),'qv-'+t.id+'-'+t.cot.valida,'Cotización vencida',nom+' · ¿liberar la fecha o extender?',url);
+  if(A.cotSeg!==false&&t.estadoProd==='cotizado'&&cotEnviada(t)&&!(t.cot.valida&&sumarDias(cotEnviada(t),SEG_DIAS)>t.cot.valida))add(sumarDias(cotEnviada(t),SEG_DIAS),'q-'+t.id+'-'+cotEnviada(t),'Cotización sin respuesta',nom+' · enviada hace '+SEG_DIAS+' días',url);
   if(A.rodajes!==false&&t.estadoProd!=='cotizado')for(const b of bloques(t))add(sumarDias(b.fecha,-1),'r-'+t.id+'-'+b.fecha,'Mañana rodaje'+(b.horaIni?' · '+b.horaIni:''),nom+(t.lugar?' · '+t.lugar:'')+(faltaAd?' · falta el adelanto':''),url);
  }
  return out.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id.localeCompare(b.id));
@@ -2036,6 +2042,8 @@ const A={
  nuevaCot:()=>elegirTipo(true),
  nuevoTipo:()=>elegirTipo(false),
  verCots:()=>{S.f='cotizado';if(location.hash!=='#trabajos')location.hash='#trabajos';else render();window.scrollTo(0,0)},
+ cotLiberar:id=>{mutT(id,x=>{x.estadoProd='cancelado';x.cot={...x.cot,liberada:hoy()}}).then(()=>{syncCal(id);toast('Fecha liberada: la cotización quedó como no aceptada y se quitó del calendario.');render()})},
+ cotExtender:id=>{mutT(id,x=>{const b=x.cot.valida&&x.cot.valida>hoy()?x.cot.valida:hoy();x.cot={...x.cot,valida:sumarDias(b,num(S.aj.cotValidez)||5)}}).then(()=>{const t=S.trabajos.find(x=>x.id===id);toast('Válida hasta el '+fd(t.cot.valida)+'.');render()})},
  cotEnv:id=>{mutT(id,x=>{x.cot={...x.cot,enviada:x.cot.enviada?'':hoy()}}).then(()=>verT(id))},
  mas:()=>abrir(cab('¿Qué quieres registrar?')+`<div class="elige"><button class="btn pri" data-a="nuevaCot">${ic('list')}<span>Nueva cotización<small>Videoclip, sesión en vivo, boda o paquete, con PDF para el cliente</small></span></button><button class="btn" data-a="nuevoTipo">${ic('film')}<span>Nuevo trabajo<small>Ya confirmado: artista, cliente, adelanto y entrega</small></span></button><button class="btn" data-a="pagoRapido">${ic('cash')}<span>Un pago recibido<small>Adelanto, abono o cancelación</small></span></button><button class="btn" data-a="gastoRapido">${ic('gift')}<span>Un gasto de producción<small>Transporte, hospedaje, viáticos…</small></span></button><button class="btn" data-a="gastoGen">${ic('coin')}<span>Un gasto del negocio<small>Equipo, software, publicidad, internet…</small></span></button></div>`),
  pagoRapido:()=>elegirParaPago(),
