@@ -708,6 +708,33 @@ async def validez_cotizacion(p):
     comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
     await b.close()
 
+@prueba
+async def sin_descuentos(p):
+    b, ctx, pg = await nueva(p)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=videoclip]'); await pg.wait_for_timeout(300)
+    await pg.fill('#ft', 'Dos Temas'); await pg.fill('#far', 'Grupo S')
+    await pg.fill('#srv [data-f=n]', '2'); await pg.wait_for_timeout(150)
+    comprobar(await pg.input_value('#fo') == '4250' and await pg.is_visible('#srvesc') and await pg.is_checked('#srvesc input'), 'con 2 videos aplica −15% y muestra la opción marcada')
+    comprobar('−15% desde 2' in await pg.inner_text('#srvesc'), 'la opción dice qué descuento es: ' + await pg.inner_text('#srvesc'))
+    await pg.uncheck('#srvesc input'); await pg.wait_for_timeout(150)
+    comprobar(await pg.input_value('#fo') == '5000' and 'Descuento' not in await pg.inner_text('#srvtot'), 'sin descuentos: 2 × 2,500 = 5,000')
+    await pg.click('#sheet form button[type=submit]'); await pg.wait_for_timeout(700)
+    t = servidor(await estado(pg), 'trabajos')[0]
+    comprobar(t['total'] == 5000 and t['cot']['sinEscala'] is True, 'se guarda sin descuento por cantidad')
+    comprobar(not await pg.is_checked('#ce-aesc') and '5,000.00' in await pg.inner_text('#ce-desg'), 'el editor respeta la opción')
+    await pg.check('#ce-aesc'); await pg.wait_for_timeout(150)
+    comprobar('4,250.00' in await pg.inner_text('#ce-desg'), 'en el editor se puede volver a aplicar')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.cqrow h3'); await pg.wait_for_timeout(300); await pg.click('#sheet [data-a=editarT]'); await pg.wait_for_timeout(400)
+    comprobar(not await pg.is_checked('#srvesc input') and await pg.input_value('#fo') == '5000', 'al editar el trabajo sigue sin descuentos')
+    await pg.fill('#fo', '4500'); await pg.wait_for_timeout(150)
+    comprobar(await pg.input_value('#srvpq [data-pq=valor]') == '500', 'un precio pactado menor sigue quedando como descuento especial')
+    await pg.click('#sheet [data-a=cerrar]'); await pg.wait_for_timeout(200)
+    await pg.click('.fab'); await pg.click('#sheet [data-a=nuevaCot]'); await pg.click('#sheet [data-tipo=boda]'); await pg.wait_for_timeout(300)
+    comprobar(await pg.is_hidden('#srvesc'), 'la boda (precio fijo) no muestra la opción')
+    comprobar(not pg.errores, 'sin errores de JavaScript: ' + '; '.join(pg.errores))
+    await b.close()
+
 async def main():
     nombres = sys.argv[1:] or list(PRUEBAS)
     async with async_playwright() as p:

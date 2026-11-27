@@ -573,3 +573,4 @@ table.desg tr.aho td{color:var(--verde);font-weight:650;text-align:left;border:0
 .desg .nopdf{color:var(--mute);font-weight:500}
 .umin{display:flex;align-items:center;gap:8px;color:var(--mute);font-weight:600}.umin input{max-width:110px}
 .svrow .svdur{grid-column:1/-1;justify-content:flex-start}
+#srvesc[hidden]{display:none!important}
