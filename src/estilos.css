@@ -541,3 +541,16 @@ form label.mini,.mini{display:inline-flex;align-items:center;gap:6px;font-size:1
 @media (min-width:700px){.orow{grid-template-columns:1fr 110px auto 36px}.orow [data-f=n]{grid-column:auto}.orow:not(:has([data-f=ok])) [data-f=p]{grid-column:auto}}
 
 .cprev{background:color-mix(in srgb,var(--line) 40%,transparent);border-radius:10px;padding:8px 10px;color:var(--ink)}
+
+/* precio por tema, descuentos y paquete */
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.dsc3{grid-template-columns:70px 90px 1fr}
+.trow{display:grid;grid-template-columns:auto 64px 1fr auto 36px;gap:6px;align-items:center;margin-bottom:6px;font-size:14px;color:var(--mute)}
+.trow input{min-width:0;text-align:right}.trow .x.sm{width:36px;height:36px;font-size:18px}
+table.desg{width:100%;border-collapse:collapse;margin:10px 0 6px;font-variant-numeric:tabular-nums;font-size:14px}
+table.desg td{padding:7px 4px;border-bottom:1px solid var(--line)}table.desg td:last-child{text-align:right;white-space:nowrap;font-weight:600}
+table.desg tr.dsc td{color:var(--rosag)}table.desg tr.tot td{font-weight:800;font-size:17px;border-bottom:0;padding-top:10px}
+table.desg tr.aho td{color:var(--verde);font-weight:650;text-align:left;border:0;padding-top:0}
+.it.pqp{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center}.pqp>div:first-child{min-width:0;cursor:pointer}.pqp b{white-space:normal}.pqp .x.sm{width:34px;height:34px}
+.pqadd .chip{font-size:14px}
+@media (max-width:420px){.g3:not(.dsc3){grid-template-columns:1fr 1fr}.g3:not(.dsc3)>div:last-child:nth-child(3){grid-column:1/-1}}

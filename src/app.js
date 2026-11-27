@@ -935,7 +935,7 @@ function fGastoGen(g0){
 /* ---------- PDF ---------- */
 let pdfLib=null;
 function cargarPdf(){if(pdfLib)return pdfLib;pdfLib=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='vendor/jspdf.umd.min.js';sc.onload=()=>window.jspdf?res(window.jspdf.jsPDF):rej(new Error('pdf'));sc.onerror=()=>{pdfLib=null;rej(new Error('pdf'))};document.head.appendChild(sc)});return pdfLib}
-const pdfTxt=x=>String(x??'').replace(/[•●▪]/g,'·').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/[–—]/g,'-').replace(/…/g,'...').replace(/[^\x20-\xFF\n]/g,'');
+const pdfTxt=x=>String(x??'').replace(/[•●▪]/g,'·').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/[–—−]/g,'-').replace(/…/g,'...').replace(/[^\x20-\xFF\n]/g,'');
 async function hacerPdf(tipo,t,p){
  const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
  if(!dl){toast('Aquí no se pueden descargar archivos. Te dejo el texto para copiar.');copiar(tipo==='recibo'?textoRecibo(t,p):textoT(t));return}
@@ -1134,53 +1134,128 @@ const CATALOGO_DEF=[
  ['Iluminación profesional (3 luces LED COB + C-Stand + difusores)',300],['Máquina de humo',50],['Cámara secundaria',500],['Cámara adicional con operador',1000],['Tomas con dron',500],['Edición resumen de 30 a 45 minutos',500],['Video de preboda para proyectar o invitación digital',300],['Día adicional de rodaje',800]
 ].map(([nombre,precio],i)=>({id:'c'+i,nombre,precio}));
 const MSG_COT_DEF='Hola {nombre}, ¿cómo estás? Te envío la cotización {numero} para «{trabajo}». Cualquier duda me escribes. Saludos, {negocio}.';
-const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>({...x,intro:introActual(x.intro)})):MODELOS_DEF;
+// Cómo se cobra cada modelo: precio fijo o por tema (con monto base y descuento por cantidad)
+const PRECIO_DEF={
+ videoclip:{precioModo:'porTema',precio:2500,precioBase:0,unidad:{s:'video musical',p:'videos musicales'},escala:{tipo:'pct',tramos:[{desde:2,valor:10},{desde:3,valor:15}]}},
+ envivo:{precioModo:'porTema',precio:300,precioBase:3500,unidad:{s:'canción',p:'canciones'},escala:{tipo:'ninguna',tramos:[]}},
+ boda:{precioModo:'fijo',escala:{tipo:'ninguna',tramos:[]}}};
+MODELOS_DEF.forEach(x=>Object.assign(x,PRECIO_DEF[x.id]||{}));
+const modelos=()=>Array.isArray(S.aj.modelos)&&S.aj.modelos.length?S.aj.modelos.map(x=>({...(x.precioModo?{}:PRECIO_DEF[x.id]||{}),...x,intro:introActual(x.intro)})):MODELOS_DEF;
 const catalogo=()=>Array.isArray(S.aj.catalogo)?S.aj.catalogo:CATALOGO_DEF;
 const lineas=v=>String(v||'').split('\n').map(x=>x.replace(/^\s*[•·\-*]\s*/,'').trim()).filter(Boolean);
-const cotLista=t=>!!(t&&t.cot&&(t.cot.modo==='modelo'||(t.cot.items||[]).length));
-function totModelo(c){const alt=(c.alternativas||[]).find(a=>a.id&&a.id===c.alt);return r2((alt?num(alt.precio):num(c.precio))+(c.opcionales||[]).filter(o=>o.ok).reduce((a,o)=>a+num(o.precio),0))}
-// Texto de las fechas de rodaje del trabajo, p. ej. "4 y 5 de agosto de 2026"
+const cotLista=t=>!!(t&&t.cot&&(t.cot.modo==='modelo'||(t.cot.modo==='paquete'&&(t.cot.partes||[]).length)||(t.cot.items||[]).length));
+// Texto de las fechas de rodaje del trabajo
 function fechasRodaje(t){const bs=bloques(t);if(!bs.length)return'';return bs.map(b=>b.hasta&&b.hasta>b.fecha?fd(b.fecha)+' al '+fd(b.hasta):fd(b.fecha)).join(' · ')}
-// Textos de la primera versión de los modelos (fijaban 1 video y 15 canciones): se cambian por los que usan la cantidad de temas del trabajo
+// Textos de la primera versión de los modelos (fijaban 1 video y 15 canciones)
 const introActual=x=>String(x||'').replace('A continuación, se detalla la cotización para la producción de 1 video musical, con una duración aproximada de 5 minutos, a realizarse en la ciudad de {ciudad}.','A continuación, se detalla la cotización para la producción de {videos}, con una duración aproximada de 5 minutos por video, a realizarse en la ciudad de {ciudad}.').replace('contemplando aproximadamente 15 canciones, con posibilidad','contemplando aproximadamente {canciones}, con posibilidad');
-function datosTemas(t){const n=parseInt(t&&t.temas,10)||0,nom=String((t&&t.temasNom)||'').split(',').map(x=>x.trim()).filter(Boolean);
- const lista=nom.length?' ('+nom.map(x=>'«'+x+'»').join(', ')+')':'';
+const cantDe=(c,t)=>Math.max(0,parseInt(c&&c.cantidad,10)||parseInt(t&&t.temas,10)||0);
+// Los nombres de los temas del trabajo solo se usan si la cantidad coincide (en un paquete cada parte tiene la suya)
+function datosTemas(t,c){const n=cantDe(c,t),nom=String((t&&t.temasNom)||'').split(',').map(x=>x.trim()).filter(Boolean);
+ const usaNom=nom.length&&nom.length===n&&(!c||!c._partes||c._partes.findIndex(x=>cantDe(x,t)===nom.length)===c._parte);
+ const lista=usaNom?' ('+nom.map(x=>'«'+x+'»').join(', ')+')':'';
  return {n,videos:(n>1?n+' videos musicales':'1 video musical')+lista,canciones:n>0?(n===1?'1 canción':n+' canciones')+lista:'las canciones acordadas',temas:n>0?String(n):''}}
-const ponerDatos=(x,t,c)=>{const d=datosTemas(t);return introActual(x).replace(/\{ciudad\}/g,c.ciudad||'(ciudad)').replace(/\{artista\}/g,nomArt(t)||'').replace(/\{cliente\}/g,(cli(t.clienteId)||{}).nombre||'').replace(/\{trabajo\}/g,t.titulo||'').replace(/\{videos\}/g,d.videos).replace(/\{canciones\}/g,d.canciones).replace(/\{temas\}/g,d.temas||'1')};
+const ponerDatos=(x,t,c)=>{const d=datosTemas(t,c);return introActual(x).replace(/\{ciudad\}/g,c.ciudad||'(ciudad)').replace(/\{artista\}/g,nomArt(t)||'').replace(/\{cliente\}/g,(cli(t.clienteId)||{}).nombre||'').replace(/\{trabajo\}/g,t.titulo||'').replace(/\{videos\}/g,d.videos).replace(/\{canciones\}/g,d.canciones).replace(/\{temas\}/g,d.temas||'1').replace(/\{partes\}/g,c.partes?textoPartes(c,t):'')};
+
+/* ---------- precio: por tema, descuentos por cantidad y descuento especial ---------- */
+const uniTxt=(c,n)=>{const u=c.unidad||{};return n===1?(u.s||'tema'):(u.p||'temas')};
+const ordTxt=k=>k+(k===1||k===3?'.er':'.º');
+function tramoPara(tramos,k){let v=null;for(const x of (tramos||[]).slice().sort((a,b)=>num(a.desde)-num(b.desde)))if(k>=num(x.desde)&&num(x.desde)>0)v=num(x.valor);return v}
+function textoEscala(c,m){const e=c.escala||{},tr=(e.tramos||[]).filter(x=>num(x.desde)>0).sort((a,b)=>num(a.desde)-num(b.desde));if(!tr.length||e.tipo==='ninguna')return'';
+ return e.tipo==='pct'?tr.map(x=>`desde ${num(x.desde)} ${uniTxt(c,num(x.desde))}: −${num(x.valor)}%`).join(' · '):tr.map(x=>`desde el ${ordTxt(num(x.desde))}: ${fmtR(num(x.valor),m)} c/u`).join(' · ')}
+// Desglose del precio de una cotización (o de una parte de un paquete)
+function calcPrecio(c,m){
+ const L=[];let sub=0;
+ if(c.precioModo==='porTema'){
+  const n=Math.max(1,parseInt(c.cantidad,10)||1),pu=num(c.precio),base=num(c.precioBase);
+  if(base>0){L.push({c:'Monto base de producción',m:base});sub+=base}
+  L.push({c:`${n} ${uniTxt(c,n)} × ${fmtR(pu,m)}`,m:r2(pu*n)});sub+=pu*n;
+  const e=c.escala||{};
+  if(e.tipo==='pct'){const p=tramoPara(e.tramos,n);if(p>0){const d=r2(pu*n*p/100);L.push({c:`Descuento por ${n} ${uniTxt(c,n)} (−${p}%)`,m:-d,desc:1});sub-=d}}
+  else if(e.tipo==='precio'){let tot=0;const gr=[];for(let k=1;k<=n;k++){const v=tramoPara(e.tramos,k)??pu;tot+=v;const g=gr[gr.length-1];if(g&&g.v===v)g.h=k;else gr.push({d:k,h:k,v})}
+   const d=r2(pu*n-tot);if(Math.abs(d)>0.004){const det=gr.filter(g=>g.v!==pu).map(g=>(g.d===g.h?ordTxt(g.d):ordTxt(g.d)+' al '+ordTxt(g.h))+' a '+fmtR(g.v,m)).join(', ');L.push({c:`Descuento por cantidad (${det})`,m:-d,desc:1});sub-=d}}
+ }else{
+  const alt=(c.alternativas||[]).find(a=>a.id&&a.id===c.alt);
+  if((c.alternativas||[]).length&&!alt){const mn=Math.min(...c.alternativas.map(a=>num(a.precio)));L.push({c:(c.altTitulo||'Opciones')+': desde',m:mn,pend:1});sub+=mn}
+  else{const v=alt?num(alt.precio):num(c.precio);L.push({c:(c.nombre||(c.servicio&&c.servicio!=='Servicios principales'?c.servicio:'Servicio'))+(alt?' – '+alt.nombre+(alt.detalle?' ('+alt.detalle+')':''):''),m:v});sub+=v}
+ }
+ for(const o of (c.opcionales||[]).filter(o=>o.ok)){L.push({c:o.nombre,m:num(o.precio)});sub+=num(o.precio)}
+ const dm=c.descuento||{};let dd=0;
+ if(num(dm.valor)>0){dd=Math.min(dm.tipo==='pct'?r2(sub*num(dm.valor)/100):r2(num(dm.valor)),sub);L.push({c:(dm.motivo||'Descuento especial')+(dm.tipo==='pct'?` (−${num(dm.valor)}%)`:''),m:-dd,desc:1})}
+ const total=r2(Math.max(0,sub-dd)),regular=r2(L.filter(x=>!x.desc).reduce((a,x)=>a+x.m,0));
+ return {lineas:L,total,regular,ahorro:r2(regular-total),pendiente:L.some(x=>x.pend)};
+}
+function calcPaquete(c,m){
+ const L=[];let sub=0;
+ (c.partes||[]).forEach((p,i)=>{const r=calcPrecio(p,m);L.push({c:`${i+1}. ${tituloParte(p)}`,m:r.total,parte:i,ahorro:r.ahorro});sub+=r.total});
+ const dm=c.descuento||{};let dd=0;
+ if(num(dm.valor)>0){dd=Math.min(dm.tipo==='pct'?r2(sub*num(dm.valor)/100):r2(num(dm.valor)),sub);L.push({c:(dm.motivo||'Descuento por paquete')+(dm.tipo==='pct'?` (−${num(dm.valor)}%)`:''),m:-dd,desc:1})}
+ const ahorroPartes=L.reduce((a,x)=>a+(x.ahorro||0),0),total=r2(Math.max(0,sub-dd));
+ return {lineas:L,total,ahorro:r2(ahorroPartes+dd),pendiente:(c.partes||[]).some(p=>calcPrecio(p,m).pendiente)};
+}
+const totModelo=c=>c.modo==='paquete'?calcPaquete(c,'PEN').total:calcPrecio(c,'PEN').total;
+function tituloParte(p){const md=modelos().find(x=>x.id===p.modelo);const nom=p.nombre||(md&&md.nombre)||'Servicio';if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return nom+' · '+n+' '+uniTxt(p,n)}const alt=(p.alternativas||[]).find(a=>a.id===p.alt);return nom+(alt?' · '+alt.nombre:'')}
+function textoPartes(c){const xs=(c.partes||[]).map(p=>{const md=modelos().find(x=>x.id===p.modelo),nom=(p.nombre||(md&&md.nombre)||'servicio').toLowerCase();if(p.precioModo==='porTema'){const n=Math.max(1,parseInt(p.cantidad,10)||1);return p.modelo==='videoclip'?(n===1?'1 video musical':n+' videos musicales'):nom+' de '+n+' '+uniTxt(p,n)}return nom});return xs.length>1?xs.slice(0,-1).join(', ')+' y '+xs[xs.length-1]:(xs[0]||'')}
+function htmlDesglose(r,m){return `<table class="desg"><tbody>${r.lineas.map(x=>`<tr class="${x.desc?'dsc':''}"><td>${esc(x.c)}</td><td>${x.m<0?'−'+fmtR(-x.m,m):fmtR(x.m,m)}</td></tr>`).join('')}<tr class="tot"><td>Total${r.pendiente?' (falta elegir opción)':''}</td><td>${fmtR(r.total,m)}</td></tr>${r.ahorro>0.004?`<tr class="aho"><td colspan="2">El cliente ahorra ${fmtR(r.ahorro,m)}</td></tr>`:''}</tbody></table>`}
 
 // Cotización nueva a partir de un modelo y los datos del trabajo
-function cotDesdeModelo(md,t){
+function cotDesdeModelo(md,t,cantidad){
  const base=JSON.parse(JSON.stringify(md));
- const c={modo:'modelo',modelo:md.id,titulo:base.titulo,etiqueta:base.etiqueta||'Cliente',intro:base.intro,servicio:base.servicio,ciudad:t&&t.lugar?String(t.lugar).split(/[,–-]/)[0].trim():'',
-  precio:t&&num(t.total)>0&&!(base.alternativas||[]).length?num(t.total):num(base.precio),incluye:base.incluye||[],equipos:base.equipos||[],
+ const c={modo:'modelo',modelo:md.id,nombre:base.nombre,titulo:base.titulo,etiqueta:base.etiqueta||'Cliente',intro:introActual(base.intro),servicio:base.servicio,ciudad:t&&t.lugar?String(t.lugar).split(/[,–-]/)[0].trim():'',
+  precioModo:base.precioModo||'fijo',precio:num(base.precio),precioBase:num(base.precioBase),unidad:base.unidad||{s:'tema',p:'temas'},escala:base.escala||{tipo:'ninguna',tramos:[]},
+  cantidad:cantidad||Math.max(1,parseInt(t&&t.temas,10)||1),descuento:{tipo:'monto',valor:0,motivo:''},
+  incluye:base.incluye||[],equipos:base.equipos||[],
   opcionales:(base.opcionales||[]).map(o=>({id:uid(),nombre:o.nombre,precio:num(o.precio),ok:false})),notaOpc:base.notaOpc||'',
   altTitulo:base.altTitulo||'Opciones',alternativas:(base.alternativas||[]).map(a=>({id:uid(),nombre:a.nombre,detalle:a.detalle||'',precio:num(a.precio)})),alt:'',
   secciones:base.secciones||[],consideraciones:base.consideraciones||[],fechaEtiqueta:base.fechaEtiqueta||'Fecha tentativa de rodaje',notaFecha:base.notaFecha||'',
   entrega:base.entrega||'',material:base.material||[],pago:base.pago||[]};
- if(t&&num(t.total)>0&&c.alternativas.length){const a=c.alternativas.find(x=>Math.abs(num(x.precio)-num(t.total))<0.01);if(a)c.alt=a.id}
+ if(c.precioModo==='fijo'&&t&&num(t.total)>0&&!cantidad){if(c.alternativas.length){const a=c.alternativas.find(x=>Math.abs(num(x.precio)-num(t.total))<0.01);if(a)c.alt=a.id}else c.precio=num(t.total)}
  return c;
 }
 
-// Formulario compartido: cotización de un trabajo (t) o modelo de Ajustes (sin t)
-function htmlEditorCot(c,t,m){
+// Formulario compartido. modo: 'cot' (cotización de un trabajo), 'parte' (parte de un paquete) o 'modelo' (Ajustes)
+function htmlEditorCot(c,t,m,modo){
+ modo=modo||(t?'cot':'modelo');const enTrabajo=modo!=='modelo';
  const chipsCat=(f)=>catalogo().filter(f).map(x=>`<button type="button" class="chip" data-cat="${esc(x.id)}">${esc(x.nombre)}${num(x.precio)?' · '+esc(fmtR(num(x.precio),m)):''}</button>`).join('');
- const opRow=o=>`<div class="orow" data-id="${esc(o.id||uid())}"><input data-f="n" aria-label="Opcional" value="${esc(o.nombre)}" placeholder="Equipo o servicio"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(o.precio)}" placeholder="0.00">${t?`<label class="mini" title="El cliente lo aceptó"><input type="checkbox" data-f="ok"${o.ok?' checked':''}>Sí</label>`:''}<button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
- const altRow=a=>`<div class="arow" data-id="${esc(a.id||uid())}">${t?`<input type="radio" name="altSel" value="${esc(a.id||'')}" aria-label="Elegida"${c.alt&&c.alt===a.id?' checked':''}>`:''}<input data-f="n" aria-label="Opción" value="${esc(a.nombre)}" placeholder="Full HD"><input data-f="d" aria-label="Detalle" value="${esc(a.detalle||'')}" placeholder="1920 × 1080"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(a.precio)}" placeholder="0.00"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
+ const opRow=o=>`<div class="orow" data-id="${esc(o.id||uid())}"><input data-f="n" aria-label="Opcional" value="${esc(o.nombre)}" placeholder="Equipo o servicio"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(o.precio)}" placeholder="0.00">${enTrabajo?`<label class="mini" title="El cliente lo aceptó"><input type="checkbox" data-f="ok"${o.ok?' checked':''}>Sí</label>`:''}<button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
+ const altRow=a=>`<div class="arow" data-id="${esc(a.id||uid())}">${enTrabajo?`<input type="radio" name="altSel" value="${esc(a.id||'')}" aria-label="Elegida"${c.alt&&c.alt===a.id?' checked':''}>`:''}<input data-f="n" aria-label="Opción" value="${esc(a.nombre)}" placeholder="Full HD"><input data-f="d" aria-label="Detalle" value="${esc(a.detalle||'')}" placeholder="1920 × 1080"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(a.precio)}" placeholder="0.00"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
+ const trRow=x=>`<div class="trow"><span>Desde</span><input data-f="d" inputmode="numeric" aria-label="Desde la cantidad" value="${esc(x.desde||'')}" placeholder="2"><input data-f="v" inputmode="decimal" aria-label="Valor" value="${esc(x.valor||'')}" placeholder="10"><span class="tru"></span><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
  const secRow=x=>`<div class="srow"><div class="srh"><input data-f="t" aria-label="Título de la sección" value="${esc(x.titulo)}" placeholder="Título"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div><textarea data-f="x" rows="4" aria-label="Texto de la sección">${esc(x.texto)}</textarea></div>`;
  const ta=(name,label,arr,rows,hint)=>`<label for="ce-${name}">${label}</label><textarea id="ce-${name}" name="${name}" rows="${rows||4}">${esc((arr||[]).join('\n'))}</textarea>${hint?`<p class="hint">${hint}</p>`:''}`;
+ const pt=c.precioModo==='porTema',e=c.escala||{tipo:'ninguna',tramos:[]},u=c.unidad||{s:'tema',p:'temas'},dm=c.descuento||{};
  return `<div class="cotEd">
-  ${t?'':`<label for="ce-nom">Nombre del modelo <span class="req">*</span></label><input id="ce-nom" name="nombre" value="${esc(c.nombre||'')}">`}
-  <label for="ce-tit">Título del documento</label><input id="ce-tit" name="titulo" value="${esc(c.titulo)}">
-  <div class="g2"><div><label for="ce-eti">Se dirige a</label><select id="ce-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div>
-  ${t?`<div><label for="ce-ciu">Ciudad</label><input id="ce-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div>`:`<div><label for="ce-pre">Precio base</label><input id="ce-pre" name="precio" inputmode="decimal" value="${esc(c.precio||'')}"></div>`}</div>
+  ${modo==='modelo'?`<label for="ce-nom">Nombre del modelo <span class="req">*</span></label><input id="ce-nom" name="nombre" value="${esc(c.nombre||'')}">`:''}
+  ${modo==='parte'?`<label for="ce-nom">Nombre de esta parte</label><input id="ce-nom" name="nombre" value="${esc(c.nombre||'')}">`:`<label for="ce-tit">Título del documento</label><input id="ce-tit" name="titulo" value="${esc(c.titulo)}">`}
+  ${modo==='parte'?'':`<div class="g2"><div><label for="ce-eti">Se dirige a</label><select id="ce-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div>
+  ${modo==='cot'?`<div><label for="ce-ciu">Ciudad</label><input id="ce-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div>`:'<div></div>'}</div>`}
   <label for="ce-int">Descripción</label><textarea id="ce-int" name="intro" rows="4">${esc(c.intro)}</textarea>
-  <p class="hint">Se reemplazan con los datos del trabajo: {videos} (p. ej. “3 videos musicales («A», «B», «C»)”), {canciones}, {temas}, {ciudad}, {artista} y {cliente}.${t?' La cantidad y los nombres de los temas salen de “Temas a grabar” del trabajo.':''}</p>${t?'<p class="hint cprev" id="ce-prev"></p>':''}
+  <p class="hint">Se reemplazan con los datos del trabajo: {videos} (p. ej. “3 videos musicales («A», «B», «C»)”), {canciones}, {temas}, {ciudad}, {artista} y {cliente}.${enTrabajo?' La cantidad sale de “Cantidad” en Precio, y los nombres de “Temas a grabar” del trabajo.':''}</p>${enTrabajo?'<p class="hint cprev" id="ce-prev"></p>':''}
   <h4>Precio</h4>
-  <label for="ce-alt-t" class="lbls">Si das opciones con distinto precio (por ejemplo Full HD o 4K), agrégalas aquí; si no, deja la lista vacía.</label>
-  <div id="ce-alt">${(c.alternativas||[]).map(altRow).join('')}</div>
-  <div class="acts" style="margin:4px 0 8px"><button type="button" class="btn sm" data-add="alt">${ic('plus')}Agregar opción de precio</button>${t&&(c.alternativas||[]).length?`<label class="mini"><input type="radio" name="altSel" value=""${c.alt?'':' checked'}>Aún no elige</label>`:''}</div>
-  <input type="hidden" name="altTitulo" value="${esc(c.altTitulo||'Opciones')}">
-  ${t?`<div id="ce-prebox"${(c.alternativas||[]).length?' hidden':''}><label for="ce-pre">Precio total (${esc(m)})</label><input id="ce-pre" name="precio" inputmode="decimal" value="${esc(c.precio||'')}"></div>`:''}
+  <label for="ce-pm">Cómo se cobra</label><select id="ce-pm" name="precioModo">${opts([['fijo','Precio total fijo'],['porTema','Por tema (cada video o canción)']],pt?'porTema':'fijo')}</select>
+  <div id="ce-fijo"${pt?' hidden':''}>
+   <p class="lbls">Si das opciones con distinto precio (por ejemplo Full HD o 4K), agrégalas aquí; si no, deja la lista vacía.</p>
+   <div id="ce-alt">${(c.alternativas||[]).map(altRow).join('')}</div>
+   <div class="acts" style="margin:4px 0 8px"><button type="button" class="btn sm" data-add="alt">${ic('plus')}Agregar opción de precio</button>${enTrabajo&&(c.alternativas||[]).length?`<label class="mini"><input type="radio" name="altSel" value=""${c.alt?'':' checked'}>Aún no elige</label>`:''}</div>
+   <input type="hidden" name="altTitulo" value="${esc(c.altTitulo||'Opciones')}">
+   <div id="ce-prebox"${(c.alternativas||[]).length?' hidden':''}><label for="ce-pre">Precio total (${esc(m)})</label><input id="ce-pre" name="precio" inputmode="decimal" value="${esc(pt?'':c.precio||'')}"></div>
+  </div>
+  <div id="ce-tema"${pt?'':' hidden'}>
+   <div class="g3">
+    <div><label for="ce-preu">Precio por ${esc(u.s)}</label><input id="ce-preu" name="precioU" inputmode="decimal" value="${esc(pt?c.precio||'':'')}"></div>
+    <div><label for="ce-base">Monto base fijo</label><input id="ce-base" name="precioBase" inputmode="decimal" value="${esc(c.precioBase||'')}" placeholder="0"></div>
+    ${enTrabajo?`<div><label for="ce-can">Cantidad</label><input id="ce-can" name="cantidad" type="number" min="1" step="1" inputmode="numeric" value="${esc(Math.max(1,parseInt(c.cantidad,10)||1))}"></div>`:''}
+   </div>
+   <p class="hint">El monto base es lo que cuesta montar la producción aunque sea un solo tema (jornada, equipo, montaje). Déjalo en 0 si cobras solo por tema.</p>
+   ${modo==='modelo'?`<div class="g2"><div><label for="ce-us">Se llama (uno)</label><input id="ce-us" name="uniS" value="${esc(u.s)}" placeholder="video musical"></div><div><label for="ce-up">Se llama (varios)</label><input id="ce-up" name="uniP" value="${esc(u.p)}" placeholder="videos musicales"></div></div>`:`<input type="hidden" name="uniS" value="${esc(u.s)}"><input type="hidden" name="uniP" value="${esc(u.p)}">`}
+   <label for="ce-et">Descuento por cantidad</label><select id="ce-et" name="escTipo">${opts([['ninguna','Sin descuento por cantidad'],['pct','Porcentaje según la cantidad'],['precio','Precio por posición (2.º, 3.º…)']],e.tipo||'ninguna')}</select>
+   <div id="ce-esc"${e.tipo&&e.tipo!=='ninguna'?'':' hidden'}>
+    <div id="ce-tr">${(e.tramos||[]).map(trRow).join('')}</div>
+    <div class="acts" style="margin:4px 0"><button type="button" class="btn sm" data-add="tr">${ic('plus')}Agregar tramo</button></div>
+    <p class="hint" id="ce-trh"></p>
+   </div>
+  </div>
+  ${enTrabajo?`<label>Descuento especial <span class="hint" style="font-weight:400">(opcional, sale en el PDF)</span></label>
+  <div class="g3 dsc3"><select name="dTipo" aria-label="Tipo de descuento">${opts([['monto',m==='PEN'?'S/':m],['pct','%']],dm.tipo||'monto')}</select><input name="dValor" inputmode="decimal" aria-label="Descuento" value="${esc(num(dm.valor)||'')}" placeholder="0"><input name="dMotivo" aria-label="Motivo del descuento" value="${esc(dm.motivo||'')}" placeholder="Motivo: cliente frecuente…"></div>
+  <div id="ce-desg"></div>`:''}
   <label for="ce-ser">Título de los servicios</label><input id="ce-ser" name="servicio" value="${esc(c.servicio||'Servicios principales')}">
   ${ta('incluye','Qué incluye (uno por línea)',c.incluye,5)}
   ${ta('equipos','Equipos incluidos sin costo (uno por línea)',c.equipos,5)}
@@ -1189,121 +1264,232 @@ function htmlEditorCot(c,t,m){
   <div id="ce-opc">${(c.opcionales||[]).map(opRow).join('')}</div>
   <div class="acts" style="margin:4px 0 6px"><button type="button" class="btn sm" data-add="opc">${ic('plus')}Agregar opcional</button></div>
   <details class="catd"><summary>+ Opcional del catálogo</summary><div class="chips presets" data-catbox="opc">${chipsCat(x=>num(x.precio)>0)}</div></details>
-  ${t?'<p class="hint">Marca “Sí” en lo que el cliente aceptó: se suma al total.</p>':''}
+  ${enTrabajo?'<p class="hint">Marca “Sí” en lo que el cliente aceptó: se suma al total.</p>':''}
   <label for="ce-nop">Nota de los opcionales</label><input id="ce-nop" name="notaOpc" value="${esc(c.notaOpc||'')}">
   <details class="cdet"${(c.secciones||[]).length?' open':''}><summary>Otras secciones (${(c.secciones||[]).length})</summary>
    <div id="ce-sec">${(c.secciones||[]).map(secRow).join('')}</div>
    <div class="acts" style="margin:4px 0"><button type="button" class="btn sm" data-add="sec">${ic('plus')}Agregar sección</button></div>
    <p class="hint">Por ejemplo Jornada de producción, Iluminación o Equipo humano. Empieza una línea con • para hacer una lista.</p></details>
-  ${ta('consideraciones','Consideraciones (una por línea)',c.consideraciones,5)}
+  ${ta('consideraciones','Consideraciones (una por línea)',c.consideraciones,5,modo==='parte'?'En el paquete se juntan las de todas las partes, sin repetir.':'')}
   <div class="g2"><div><label for="ce-fet">Título de la fecha</label><input id="ce-fet" name="fechaEtiqueta" value="${esc(c.fechaEtiqueta||'Fecha tentativa de rodaje')}"></div><div><label for="ce-nfe">Nota de la fecha</label><input id="ce-nfe" name="notaFecha" value="${esc(c.notaFecha||'')}" placeholder="Opcional"></div></div>
   <label for="ce-ent">Tiempo de entrega</label><input id="ce-ent" name="entrega" value="${esc(c.entrega||'')}">
   ${ta('material','Material de entrega (uno por línea)',c.material,3)}
-  ${ta('pago','Forma de pago (una por línea)',c.pago,2,'Si una línea tiene un porcentaje (50%), el PDF le agrega el monto.')}
-  ${t?'':`<label for="ce-val">Validez (días)</label><input id="ce-val" name="validez" inputmode="numeric" value="${esc(c.validez||15)}">`}
+  ${modo==='parte'?`<input type="hidden" name="pago" value="${esc((c.pago||[]).join('\n'))}">`:ta('pago','Forma de pago (una por línea)',c.pago,2,'Si una línea tiene un porcentaje (50%), el PDF le agrega el monto.')}
+  ${modo==='modelo'?`<label for="ce-val">Validez (días)</label><input id="ce-val" name="validez" inputmode="numeric" value="${esc(c.validez||15)}">`:''}
  </div>`;
 }
-function montarEditorCot(s,m,onCambio){
- const tpl={alt:()=>`<div class="arow" data-id="${uid()}">${s.querySelector('#ce-ciu')?`<input type="radio" name="altSel" value="" aria-label="Elegida">`:''}<input data-f="n" aria-label="Opción" placeholder="Full HD"><input data-f="d" aria-label="Detalle" placeholder="1920 × 1080"><input data-f="p" inputmode="decimal" aria-label="Precio" placeholder="0.00"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`,
-  opc:(n='',p='')=>`<div class="orow" data-id="${uid()}"><input data-f="n" aria-label="Opcional" value="${esc(n)}" placeholder="Equipo o servicio"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(p)}" placeholder="0.00">${s.querySelector('#ce-ciu')?'<label class="mini"><input type="checkbox" data-f="ok">Sí</label>':''}<button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`,
-  sec:()=>`<div class="srow"><div class="srh"><input data-f="t" aria-label="Título de la sección" placeholder="Título"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div><textarea data-f="x" rows="4" aria-label="Texto de la sección"></textarea></div>`};
- const box={alt:s.querySelector('#ce-alt'),opc:s.querySelector('#ce-opc'),sec:s.querySelector('#ce-sec')};
- const preBox=s.querySelector('#ce-prebox');
- const ajustar=()=>{if(preBox)preBox.hidden=!!box.alt.querySelector('.arow');onCambio&&onCambio()};
+function montarEditorCot(s,m,onCambio,enTrabajo){
+ const trTpl=()=>`<div class="trow"><span>Desde</span><input data-f="d" inputmode="numeric" aria-label="Desde la cantidad" placeholder="2"><input data-f="v" inputmode="decimal" aria-label="Valor" placeholder="10"><span class="tru"></span><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
+ const tpl={alt:()=>`<div class="arow" data-id="${uid()}">${enTrabajo?`<input type="radio" name="altSel" value="" aria-label="Elegida">`:''}<input data-f="n" aria-label="Opción" placeholder="Full HD"><input data-f="d" aria-label="Detalle" placeholder="1920 × 1080"><input data-f="p" inputmode="decimal" aria-label="Precio" placeholder="0.00"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`,
+  opc:(n='',p='')=>`<div class="orow" data-id="${uid()}"><input data-f="n" aria-label="Opcional" value="${esc(n)}" placeholder="Equipo o servicio"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(p)}" placeholder="0.00">${enTrabajo?'<label class="mini"><input type="checkbox" data-f="ok">Sí</label>':''}<button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`,
+  sec:()=>`<div class="srow"><div class="srh"><input data-f="t" aria-label="Título de la sección" placeholder="Título"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div><textarea data-f="x" rows="4" aria-label="Texto de la sección"></textarea></div>`,
+  tr:trTpl};
+ const box={alt:s.querySelector('#ce-alt'),opc:s.querySelector('#ce-opc'),sec:s.querySelector('#ce-sec'),tr:s.querySelector('#ce-tr')};
+ const preBox=s.querySelector('#ce-prebox'),pm=s.querySelector('#ce-pm'),et=s.querySelector('#ce-et');
+ const ajustar=()=>{
+  const pt=pm.value==='porTema';s.querySelector('#ce-fijo').hidden=pt;s.querySelector('#ce-tema').hidden=!pt;
+  if(preBox)preBox.hidden=!!box.alt.querySelector('.arow');
+  s.querySelector('#ce-esc').hidden=et.value==='ninguna';
+  const uS=(s.querySelector('[name=uniS]')||{}).value||'tema',uP=(s.querySelector('[name=uniP]')||{}).value||'temas';
+  s.querySelectorAll('#ce-tr .tru').forEach(x=>x.textContent=et.value==='pct'?'% menos':(m==='PEN'?'S/':m)+' c/u');
+  s.querySelectorAll('#ce-tr [data-f=v]').forEach(x=>x.placeholder=et.value==='pct'?'10':'2200');
+  const lu=s.querySelector('label[for=ce-preu]');if(lu)lu.textContent='Precio por '+uS;
+  const h=s.querySelector('#ce-trh');if(h)h.textContent=et.value==='pct'?`Ejemplo: “Desde 2 → 10”: con 2 ${uP} o más, 10% menos sobre el precio por ${uS}. Se aplica el tramo más alto que alcance la cantidad.`:`Ejemplo: “Desde 2 → 2200”: el 2.º ${uS} en adelante cuesta S/ 2,200 cada uno; agrega “Desde 3 → 2000” para el 3.º en adelante. El primero va al precio por ${uS}.`;
+  onCambio&&onCambio()};
+ pm.addEventListener('change',()=>{const a=s.querySelector('#ce-pre'),b=s.querySelector('#ce-preu');if(pm.value==='porTema'&&!b.value&&a.value)b.value=a.value;if(pm.value==='fijo'&&!a.value&&b.value)a.value=b.value;ajustar()});
+ et.addEventListener('change',()=>{if(et.value!=='ninguna'&&!box.tr.querySelector('.trow'))box.tr.insertAdjacentHTML('beforeend',trTpl());ajustar()});
  s.querySelector('.cotEd').addEventListener('click',e=>{
   const a=e.target.closest('[data-add]');if(a){const k=a.dataset.add;box[k].insertAdjacentHTML('beforeend',tpl[k]());if(k==='sec')box.sec.closest('details').open=true;const nv=box[k].lastElementChild.querySelector('input:not([type=radio]),textarea');nv&&nv.focus();ajustar();return}
-  const d=e.target.closest('[data-del]');if(d){d.closest('.orow,.arow,.srow').remove();ajustar();return}
+  const d=e.target.closest('[data-del]');if(d){d.closest('.orow,.arow,.srow,.trow').remove();ajustar();return}
   const ch=e.target.closest('[data-cat]');if(ch){const it=catalogo().find(x=>x.id===ch.dataset.cat);if(!it)return;
    if(ch.closest('[data-catbox]').dataset.catbox==='equipos'){const tx=s.querySelector('#ce-equipos');if(!lineas(tx.value).includes(it.nombre))tx.value=(tx.value.trim()?tx.value.trim()+'\n':'')+it.nombre}
    else box.opc.insertAdjacentHTML('beforeend',tpl.opc(it.nombre,num(it.precio)||''));
    ch.classList.add('on');setTimeout(()=>ch.classList.remove('on'),600);ajustar()}
  });
- s.querySelector('.cotEd').addEventListener('input',()=>onCambio&&onCambio());
- s.querySelector('.cotEd').addEventListener('change',()=>onCambio&&onCambio());
+ s.querySelector('.cotEd').addEventListener('input',()=>ajustar());
+ s.querySelector('.cotEd').addEventListener('change',e=>{if(e.target!==pm&&e.target!==et)onCambio&&onCambio()});
+ ajustar();
 }
 function leerEditorCot(s,c0){
  const F=new FormData(s.querySelector('form')),g=k=>String(F.get(k)??'').trim();
  const alternativas=[...s.querySelectorAll('#ce-alt .arow')].map(r=>({id:r.dataset.id,nombre:r.querySelector('[data-f=n]').value.trim(),detalle:r.querySelector('[data-f=d]').value.trim(),precio:r2(num(r.querySelector('[data-f=p]').value))})).filter(a=>a.nombre||a.precio>0);
- const radios=[...s.querySelectorAll('#ce-alt .arow')];const sel=radios.find(r=>{const x=r.querySelector('input[type=radio]');return x&&x.checked});
- return {...(c0||{}),modo:'modelo',titulo:g('titulo'),etiqueta:g('etiqueta')||'Cliente',ciudad:g('ciudad'),intro:g('intro'),servicio:g('servicio'),
-  precio:r2(num(F.get('precio'))),alternativas,alt:sel?sel.dataset.id:'',altTitulo:g('altTitulo')||'Opciones',
+ const sel=[...s.querySelectorAll('#ce-alt .arow')].find(r=>{const x=r.querySelector('input[type=radio]');return x&&x.checked});
+ const pt=g('precioModo')==='porTema';
+ const n={...(c0||{}),titulo:F.has('titulo')?g('titulo'):(c0||{}).titulo,etiqueta:F.has('etiqueta')?g('etiqueta')||'Cliente':(c0||{}).etiqueta||'Cliente',ciudad:F.has('ciudad')?g('ciudad'):(c0||{}).ciudad||'',intro:g('intro'),servicio:g('servicio'),
+  precioModo:pt?'porTema':'fijo',precio:r2(num(F.get(pt?'precioU':'precio'))),precioBase:r2(num(F.get('precioBase'))),
+  unidad:{s:g('uniS')||'tema',p:g('uniP')||'temas'},
+  escala:{tipo:g('escTipo')||'ninguna',tramos:[...s.querySelectorAll('#ce-tr .trow')].map(r=>({desde:parseInt(r.querySelector('[data-f=d]').value,10)||0,valor:r2(num(r.querySelector('[data-f=v]').value))})).filter(x=>x.desde>0&&x.valor>0).sort((a,b)=>a.desde-b.desde)},
+  alternativas:pt?[]:alternativas,alt:!pt&&sel?sel.dataset.id:'',altTitulo:g('altTitulo')||'Opciones',
   incluye:lineas(F.get('incluye')),equipos:lineas(F.get('equipos')),
   opcionales:[...s.querySelectorAll('#ce-opc .orow')].map(r=>({id:r.dataset.id,nombre:r.querySelector('[data-f=n]').value.trim(),precio:r2(num(r.querySelector('[data-f=p]').value)),ok:!!(r.querySelector('[data-f=ok]')&&r.querySelector('[data-f=ok]').checked)})).filter(o=>o.nombre),
   notaOpc:g('notaOpc'),secciones:[...s.querySelectorAll('#ce-sec .srow')].map(r=>({titulo:r.querySelector('[data-f=t]').value.trim(),texto:r.querySelector('[data-f=x]').value.trim()})).filter(x=>x.titulo||x.texto),
   consideraciones:lineas(F.get('consideraciones')),fechaEtiqueta:g('fechaEtiqueta'),notaFecha:g('notaFecha'),entrega:g('entrega'),material:lineas(F.get('material')),pago:lineas(F.get('pago'))};
+ if(F.has('nombre'))n.nombre=g('nombre');
+ if(F.has('cantidad'))n.cantidad=Math.max(1,parseInt(F.get('cantidad'),10)||1);
+ if(F.has('dValor'))n.descuento={tipo:g('dTipo')||'monto',valor:r2(num(F.get('dValor'))),motivo:g('dMotivo')};
+ if(n.modo!=='paquete')n.modo='modelo';
+ return n;
 }
 
-// Cotización de un trabajo con un modelo
-function fCotModelo(id,modeloId){
+// Cotización de un trabajo con un modelo. Con parte != null edita esa parte de un paquete.
+function fCotModelo(id,modeloId,parte){
  const t=S.trabajos.find(x=>x.id===id);if(!t)return;const m=t.moneda||'PEN';
- const prev=t.cot&&t.cot.modo==='modelo'?t.cot:null;
+ const esParte=parte!=null&&t.cot&&t.cot.modo==='paquete';
+ const prev=esParte?t.cot.partes[parte]:(t.cot&&t.cot.modo==='modelo'?t.cot:null);
+ if(esParte&&!prev)return fPaquete(id);
  const md=modelos().find(x=>x.id===(modeloId||(prev&&prev.modelo)))||modelos().find(x=>nrm(x.nombre)===nrm(t.tipo))||modelos()[0];
- const c=prev&&(!modeloId||modeloId===prev.modelo)?{...prev,intro:introActual(prev.intro)}:{...cotDesdeModelo(md,t),...(prev&&prev.ciudad?{ciudad:prev.ciudad}:{})};
- const emit=(prev&&prev.emitida)||hoy();
+ const c=prev&&(!modeloId||modeloId===prev.modelo)?{...prev,intro:introActual(prev.intro)}:{...cotDesdeModelo(md,t,esParte?(prev&&prev.cantidad)||1:0),...(prev&&prev.ciudad?{ciudad:prev.ciudad}:{})};
+ const emit=(prev&&!esParte&&prev.emitida)||hoy();
  cargarPdf().catch(()=>{});cargarLogo().catch(()=>{});
- abrir(cab(prev&&prev.num?'Cotización '+esc(prev.num):'Cotización',esc(t.titulo))+`<form novalidate>
-  <label>Modelo</label><div class="segm" role="group" aria-label="Modelo">${modelos().map(x=>`<button type="button" class="${x.id===md.id?'on':''}" data-mod="${esc(x.id)}" aria-pressed="${x.id===md.id}">${esc(x.nombre)}</button>`).join('')}<button type="button" data-mod="__partidas">Por partidas</button></div>
-  ${prev?'<p class="hint">Cambiar de modelo reemplaza el contenido por el del modelo elegido.</p>':''}
-  ${htmlEditorCot(c,t,m)}
-  <div class="qtot"><span>Total</span><b id="ce-total"></b></div>
-  <label class="chk"><input type="checkbox" name="usarTotal" checked> Usar este total como monto del trabajo</label>
+ const segm=`<div class="segm" role="group" aria-label="Modelo">${modelos().map(x=>`<button type="button" class="${x.id===md.id?'on':''}" data-mod="${esc(x.id)}" aria-pressed="${x.id===md.id}">${esc(x.nombre)}</button>`).join('')}${esParte?'':'<button type="button" data-mod="__paquete">Paquete</button><button type="button" data-mod="__partidas">Por partidas</button>'}</div>`;
+ abrir(cab(esParte?'Parte '+(parte+1)+' del paquete':prev&&prev.num?'Cotización '+esc(prev.num):'Cotización',esc(t.titulo))+`<form novalidate>
+  <label>${esParte?'Modelo de esta parte':'Modelo'}</label>${segm}
+  ${esParte?'':'<p class="hint">¿Varios servicios para el mismo cliente (por ejemplo videoclips y una sesión en vivo)? Elige “Paquete”.</p>'}
+  ${prev&&!esParte?'<p class="hint">Cambiar de modelo reemplaza el contenido por el del modelo elegido.</p>':''}
+  ${htmlEditorCot(c,t,m,esParte?'parte':'cot')}
+  ${esParte?'':`<label class="chk"><input type="checkbox" name="usarTotal" checked> Usar el total como monto del trabajo</label>
   <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc((prev&&prev.valida)||sumarDias(emit,num(md.validez)||num(S.aj.cotValidez)||15))}"></div></div>
-  <p class="hint">${t.fecha?esc(c.fechaEtiqueta||'Fecha')+': '+esc(fechasRodaje(t))+' (se toma del trabajo).':'El trabajo aún no tiene fecha: en el PDF saldrá “Por definir”.'}</p>
+  <p class="hint">${t.fecha?esc(c.fechaEtiqueta||'Fecha')+': '+esc(fechasRodaje(t))+' (se toma del trabajo).':'El trabajo aún no tiene fecha: en el PDF saldrá “Por definir”.'}</p>`}
   <p class="err" id="ce-err" role="alert"></p>
-  <div class="acts"><button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${t.id}">Cancelar</button></div></form>`,{mount:s=>{
-  const F=s.querySelector('form'),tot=s.querySelector('#ce-total'),err=s.querySelector('#ce-err');
-  const prevD=s.querySelector('#ce-prev');
-  const suma=()=>{const n=leerEditorCot(s,c);tot.textContent=fmtR(totModelo(n),m);if(prevD)prevD.innerHTML='<b>Así se verá:</b> '+esc(ponerDatos(n.intro,t,n))};
-  montarEditorCot(s,m,suma);suma();
-  s.querySelector('.segm').addEventListener('click',e=>{const b=e.target.closest('[data-mod]');if(!b||b.classList.contains('on'))return;if(b.dataset.mod==='__partidas')fCotPartidas(id,true);else fCotModelo(id,b.dataset.mod)});
-  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(md.validez)||num(S.aj.cotValidez)||15)});
+  <div class="acts">${esParte?`<button class="btn pri" type="submit" name="ir" value="">Guardar parte</button><button class="btn" type="button" data-a="fPaquete" data-id="${t.id}">Volver al paquete</button>`:`<button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${t.id}">Cancelar</button>`}</div></form>`,{mount:s=>{
+  const F=s.querySelector('form'),err=s.querySelector('#ce-err'),prevD=s.querySelector('#ce-prev'),desg=s.querySelector('#ce-desg');
+  const pinta=()=>{const n=leerEditorCot(s,c);if(desg)desg.innerHTML=htmlDesglose(calcPrecio(n,m),m);if(prevD)prevD.innerHTML='<b>Así se verá:</b> '+esc(ponerDatos(n.intro,t,esParte?{...n,ciudad:t.cot.ciudad,_parte:parte,_partes:t.cot.partes.map((x,k)=>k===parte?n:x)}:n))};
+  montarEditorCot(s,m,pinta,true);
+  s.querySelector('.segm').addEventListener('click',e=>{const b=e.target.closest('[data-mod]');if(!b||b.classList.contains('on'))return;const k=b.dataset.mod;
+   if(k==='__partidas')fCotPartidas(id,true);
+   else if(k==='__paquete'){const actual=leerEditorCot(s,c);const p0={...actual,modelo:md.id,nombre:actual.nombre||md.nombre};delete p0.num;delete p0.emitida;delete p0.valida;
+    mutT(id,x=>{x.cot={modo:'paquete',num:(x.cot&&x.cot.num)||'',titulo:'Cotización – Paquete de producción audiovisual',etiqueta:p0.etiqueta||'Cliente',ciudad:p0.ciudad||'',intro:'A continuación, se detalla la cotización del paquete de producción audiovisual, que incluye {partes}.',partes:[p0],descuento:{tipo:'monto',valor:0,motivo:'Descuento por paquete'},consideraciones:p0.consideraciones||[],pago:p0.pago||[],emitida:(x.cot&&x.cot.emitida)||hoy(),valida:(x.cot&&x.cot.valida)||''}}).then(()=>fPaquete(id))}
+   else fCotModelo(id,k,esParte?parte:undefined)});
+  const qe=s.querySelector('#qe');if(qe)qe.addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(md.validez)||num(S.aj.cotValidez)||15)});
   F.addEventListener('submit',async e=>{e.preventDefault();
-   const n=leerEditorCot(s,c),D=new FormData(F);
-   if(!(totModelo(n)>0)&&!n.alternativas.length){err.textContent='Escribe el precio total.';return}
+   const n={...leerEditorCot(s,c),modelo:md.id},D=new FormData(F),r=calcPrecio(n,m);
+   if(!(r.total>0)){err.textContent=n.precioModo==='porTema'?'Escribe el precio por '+uniTxt(n,1)+'.':'Escribe el precio total.';return}
+   if(esParte){await mutT(id,x=>{x.cot.partes[parte]={...n,modo:'modelo',nombre:n.nombre||md.nombre}});toast('Parte guardada.');fPaquete(id);return}
    const emi=D.get('emitida')||hoy();
-   const cot={...n,modelo:md.id,num:(prev&&prev.num)||(t.cot&&t.cot.num)||sigNumCot(emi.slice(0,4)),emitida:emi,valida:D.get('valida')||''};
-   const usar=!!D.get('usarTotal')&&totModelo(cot)>0,ir=e.submitter&&e.submitter.value;
-   await mutT(id,x=>{x.cot=cot;if(usar)x.total=totModelo(cot)});
+   const cot={...n,num:(prev&&prev.num)||(t.cot&&t.cot.num)||sigNumCot(emi.slice(0,4)),emitida:emi,valida:D.get('valida')||''};
+   const usar=!!D.get('usarTotal')&&r.total>0,ir=e.submitter&&e.submitter.value;
+   await mutT(id,x=>{x.cot=cot;if(usar)x.total=r.total;if(cot.precioModo==='porTema'&&cot.cantidad!==(parseInt(x.temas,10)||0))x.temas=cot.cantidad});
    toast('Cotización '+cot.num+' guardada.');verT(id);
    const t2=S.trabajos.find(x=>x.id===id);
    if(t2&&ir==='pdf')hacerCotPdf(t2);else if(t2&&ir==='wa')enviarCot(t2);
   });
  }});
 }
-function fCot(id){const t=S.trabajos.find(x=>x.id===id);if(!t)return;if(t.cot&&t.cot.modo!=='modelo'&&(t.cot.items||[]).length)fCotPartidas(id);else fCotModelo(id)}
+function fCot(id){const t=S.trabajos.find(x=>x.id===id);if(!t)return;if(t.cot&&t.cot.modo==='paquete')fPaquete(id);else if(t.cot&&t.cot.modo!=='modelo'&&(t.cot.items||[]).length)fCotPartidas(id);else fCotModelo(id)}
 
-// Al aprobar: qué opción y qué opcionales aceptó el cliente
+/* ---------- paquete: varios servicios en una sola cotización ---------- */
+function fPaquete(id){
+ const t=S.trabajos.find(x=>x.id===id);if(!t||!t.cot||t.cot.modo!=='paquete')return;const m=t.moneda||'PEN',c=t.cot,dm=c.descuento||{};
+ cargarPdf().catch(()=>{});cargarLogo().catch(()=>{});
+ const emit=c.emitida||hoy();
+ abrir(cab(c.num?'Paquete '+esc(c.num):'Cotización por paquete',esc(t.titulo))+`<form novalidate>
+  <label>Tipo</label><div class="segm" role="group">${modelos().map(x=>`<button type="button" data-mod="${esc(x.id)}">${esc(x.nombre)}</button>`).join('')}<button type="button" class="on" aria-pressed="true">Paquete</button></div>
+  <h4>Servicios del paquete</h4>
+  <div id="pq-partes">${(c.partes||[]).map((p,i)=>{const r=calcPrecio(p,m);return `<div class="it gi pqp"><div data-a="editarParte" data-id="${id}" data-p="${i}"><b>${i+1}. ${esc(tituloParte(p))}</b><p>${r.pendiente?'Falta elegir la opción':r.ahorro>0.004?'Ahorro '+fmt(r.ahorro,m):'Toca para editar'}</p></div><span class="bqm">${fmt(r.total,m)}</span>${(c.partes||[]).length>1?`<button type="button" class="x sm" data-a="quitarParte" data-id="${id}" data-p="${i}" data-c="1" data-cl="¿Quitar?" aria-label="Quitar esta parte">×</button>`:''}</div>`}).join('')}</div>
+  <label>Agregar servicio</label><div class="chips presets pqadd">${modelos().map(x=>`<button type="button" class="chip" data-addp="${esc(x.id)}">+ ${esc(x.nombre)}</button>`).join('')}</div>
+  <label>Descuento por paquete <span class="hint" style="font-weight:400">(además de los descuentos de cada parte)</span></label>
+  <div class="g3 dsc3"><select name="dTipo" aria-label="Tipo de descuento">${opts([['monto',m==='PEN'?'S/':m],['pct','%']],dm.tipo||'monto')}</select><input name="dValor" inputmode="decimal" aria-label="Descuento" value="${esc(num(dm.valor)||'')}" placeholder="0"><input name="dMotivo" aria-label="Motivo" value="${esc(dm.motivo||'Descuento por paquete')}"></div>
+  <div id="pq-desg"></div>
+  <label for="pq-tit">Título del documento</label><input id="pq-tit" name="titulo" value="${esc(c.titulo||'')}">
+  <div class="g2"><div><label for="pq-eti">Se dirige a</label><select id="pq-eti" name="etiqueta">${opts([['Cliente','Cliente'],['Novios','Novios'],['Empresa','Empresa']],c.etiqueta||'Cliente')}</select></div><div><label for="pq-ciu">Ciudad</label><input id="pq-ciu" name="ciudad" value="${esc(c.ciudad||'')}" placeholder="Lima"></div></div>
+  <label for="pq-int">Descripción general</label><textarea id="pq-int" name="intro" rows="3">${esc(c.intro||'')}</textarea>
+  <p class="hint">{partes} se reemplaza por la lista de servicios, por ejemplo “2 videos musicales y sesión en vivo de 3 canciones”.</p><p class="hint cprev" id="pq-prev"></p>
+  <label for="pq-con">Consideraciones (una por línea)</label><textarea id="pq-con" name="consideraciones" rows="5">${esc((c.consideraciones||[]).join('\n'))}</textarea>
+  <div class="acts" style="margin:4px 0"><button type="button" class="btn sm" id="pq-junta">Juntar las de todas las partes</button></div>
+  <label for="pq-pag">Forma de pago (una por línea)</label><textarea id="pq-pag" name="pago" rows="2">${esc((c.pago||[]).join('\n'))}</textarea>
+  <label class="chk"><input type="checkbox" name="usarTotal" checked> Usar el total del paquete como monto del trabajo</label>
+  <div class="g2"><div><label for="qe">Fecha de emisión</label><input id="qe" name="emitida" type="date" value="${esc(emit)}"></div><div><label for="qv">Válida hasta</label><input id="qv" name="valida" type="date" value="${esc(c.valida||sumarDias(emit,num(S.aj.cotValidez)||15))}"></div></div>
+  <p class="err" id="pq-err" role="alert"></p>
+  <div class="acts"><button class="btn pri" type="submit" name="ir" value="wa">${ic('wa')}Guardar y enviar por WhatsApp</button><button class="btn" type="submit" name="ir" value="pdf">Guardar y descargar PDF</button><button class="btn" type="submit" name="ir" value="">Guardar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div></form>`,{mount:s=>{
+  const F=s.querySelector('form');
+  const leer=()=>{const D=new FormData(F),g=k=>String(D.get(k)??'').trim();return {...S.trabajos.find(x=>x.id===id).cot,titulo:g('titulo'),etiqueta:g('etiqueta')||'Cliente',ciudad:g('ciudad'),intro:g('intro'),consideraciones:lineas(D.get('consideraciones')),pago:lineas(D.get('pago')),descuento:{tipo:g('dTipo')||'monto',valor:r2(num(D.get('dValor'))),motivo:g('dMotivo')||'Descuento por paquete'},emitida:D.get('emitida')||hoy(),valida:D.get('valida')||''}};
+  const pinta=()=>{const n=leer();s.querySelector('#pq-desg').innerHTML=htmlDesglose(calcPaquete(n,m),m);s.querySelector('#pq-prev').innerHTML='<b>Así se verá:</b> '+esc(ponerDatos(n.intro,t,n))};
+  pinta();F.addEventListener('input',pinta);F.addEventListener('change',pinta);
+  // guarda lo escrito antes de ir a otra pantalla
+  const guardarYa=()=>mutT(id,x=>{const n=leer();x.cot={...n,partes:x.cot.partes}});
+  s.addEventListener('click',async e=>{
+   const ap=e.target.closest('[data-addp]');if(ap){const md=modelos().find(x=>x.id===ap.dataset.addp);if(!md)return;await guardarYa();await mutT(id,x=>{x.cot.partes=[...(x.cot.partes||[]),cotDesdeModelo(md,x,1)]});fCotModelo(id,null,S.trabajos.find(x=>x.id===id).cot.partes.length-1);return}
+   const ep=e.target.closest('[data-a=editarParte]');if(ep){e.stopPropagation();await guardarYa();fCotModelo(id,null,+ep.dataset.p);return}
+   const mb=e.target.closest('.segm [data-mod]');if(mb){fCotModelo(id,mb.dataset.mod);return}
+  },true);
+  s.querySelector('#pq-junta').addEventListener('click',()=>{const tx=s.querySelector('#pq-con'),todas=[...lineas(tx.value)];for(const p of S.trabajos.find(x=>x.id===id).cot.partes||[])for(const l of p.consideraciones||[])if(!todas.some(x=>nrm(x)===nrm(l)))todas.push(l);tx.value=todas.join('\n');toast('Consideraciones juntadas, sin repetir.')});
+  s.querySelector('#qe').addEventListener('change',e=>{if(e.target.value)s.querySelector('#qv').value=sumarDias(e.target.value,num(S.aj.cotValidez)||15)});
+  F.addEventListener('submit',async e=>{e.preventDefault();
+   const n=leer(),r=calcPaquete(n,m);
+   if(!(n.partes||[]).length||!(r.total>0)){s.querySelector('#pq-err').textContent='Agrega al menos un servicio con precio.';return}
+   const cot={...n,num:n.num||sigNumCot(String(n.emitida).slice(0,4))};
+   const usar=!!new FormData(F).get('usarTotal'),ir=e.submitter&&e.submitter.value;
+   await mutT(id,x=>{x.cot={...cot,partes:x.cot.partes};if(usar)x.total=r.total});
+   toast('Cotización '+cot.num+' guardada.');verT(id);
+   const t2=S.trabajos.find(x=>x.id===id);
+   if(t2&&ir==='pdf')hacerCotPdf(t2);else if(t2&&ir==='wa')enviarCot(t2);
+  });
+ }});
+}
+
+// Al aprobar: qué opción y qué opcionales aceptó el cliente; en un paquete, si se separa en trabajos
 function fAprobar(id){
  const t=S.trabajos.find(x=>x.id===id);if(!t)return;const c=t.cot,m=t.moneda||'PEN';
+ if(c.modo==='paquete'){
+  const r=calcPaquete(c,m),falta=(c.partes||[]).findIndex(p=>calcPrecio(p,m).pendiente);
+  abrir(cab('Paquete aprobado',esc(t.titulo))+`<form novalidate>
+   ${htmlDesglose(r,m)}
+   ${falta>=0?`<p class="err">En la parte ${falta+1} falta elegir qué opción tomó el cliente.</p><div class="acts"><button type="button" class="btn pri" data-a="editarParte" data-id="${id}" data-p="${falta}">Elegir en la parte ${falta+1}</button></div>`:`
+   <label>¿Cómo lo quieres llevar?</label>
+   <label class="chk"><input type="radio" name="como" value="separar" checked> Separar en ${c.partes.length} trabajos, uno por servicio (cada uno con su fecha, calendario y cobros)</label>
+   <label class="chk"><input type="radio" name="como" value="uno"> Un solo trabajo con el total del paquete</label>
+   <p class="hint">Al separar, el descuento por paquete se reparte entre los trabajos en proporción a su precio. Los pagos ya registrados quedan en este trabajo.</p>
+   <div class="acts"><button class="btn pri" type="submit">${ic('check')}Aprobar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div>`}</form>`,{mount:s=>{
+   const F=s.querySelector('form');F.addEventListener('submit',async e=>{e.preventDefault();
+    const como=new FormData(F).get('como');
+    if(como==='uno'||(c.partes||[]).length<2){await mutT(id,x=>{x.total=r.total;x.estadoProd='produccion'});syncCal(id);toast('Paquete aprobado.');verT(id);return}
+    const sumas=c.partes.map(p=>calcPrecio(p,m).total),suma=sumas.reduce((a,b)=>a+b,0)||1,fac=r.total/suma;
+    const netos=sumas.map(v=>r2(v*fac));netos[0]=r2(r.total-netos.slice(1).reduce((a,b)=>a+b,0));
+    const pctAd=num(t.total)>0&&num(t.adelantoReq)>0?num(t.adelantoReq)/num(t.total):0;
+    const nombre=p=>p.nombre||((modelos().find(x=>x.id===p.modelo)||{}).nombre)||'Servicio';
+    const tit=(p)=>`${t.titulo} – ${nombre(p)}`;
+    for(let i=1;i<c.partes.length;i++){const p=c.partes[i];
+     const nt=normT({id:uid(),titulo:tit(p),clienteId:t.clienteId,artistaId:t.artistaId,tipo:nombre(p),fecha:'',entrega:'',moneda:m,total:netos[i],estadoProd:'produccion',notas:'Parte '+(i+1)+' del paquete '+(c.num||''),creado:Date.now(),
+      temas:p.precioModo==='porTema'?Math.max(1,parseInt(p.cantidad,10)||1):0,lugar:t.lugar||'',retencion:!!t.retencion,modoPago:t.modoPago||'adelanto',adelantoReq:pctAd?r2(netos[i]*pctAd):0,cotDe:{trabajo:id,num:c.num,parte:i},cot:{...c},mod:Date.now()});
+     await guardar('trabajos',nt).catch(()=>{});
+    }
+    const p0=c.partes[0];
+    await mutT(id,x=>{x.titulo=tit(p0);x.tipo=nombre(p0);x.total=netos[0];x.estadoProd='produccion';x.cotDe={trabajo:id,num:c.num,parte:0};if(p0.precioModo==='porTema')x.temas=Math.max(1,parseInt(p0.cantidad,10)||1);if(pctAd)x.adelantoReq=r2(netos[0]*pctAd)});
+    syncCal(id);toast(`Paquete aprobado: quedó en ${c.partes.length} trabajos. Ponles fecha a los nuevos.`);verT(id);
+   })}});
+  return;
+ }
  abrir(cab('Cotización aprobada',esc(t.titulo))+`<form novalidate>
   ${(c.alternativas||[]).length?`<label>¿Qué opción eligió?</label>${c.alternativas.map(a=>`<label class="chk"><input type="radio" name="alt" value="${esc(a.id)}"${c.alt===a.id?' checked':''}> ${esc(a.nombre)}${a.detalle?' ('+esc(a.detalle)+')':''} · ${fmtR(num(a.precio),m)}</label>`).join('')}`:''}
   ${(c.opcionales||[]).length?`<label>¿Qué opcionales aceptó?</label>${c.opcionales.map(o=>`<label class="chk"><input type="checkbox" name="op" value="${esc(o.id)}"${o.ok?' checked':''}> ${esc(o.nombre)} · ${fmtR(num(o.precio),m)}</label>`).join('')}`:''}
-  <div class="qtot"><span>Total del trabajo</span><b id="ap-tot"></b></div>
+  <div id="ap-desg"></div>
   <p class="err" id="ap-err" role="alert"></p>
   <div class="acts"><button class="btn pri" type="submit">${ic('check')}Aprobar</button><button class="btn" type="button" data-a="verT" data-id="${id}">Cancelar</button></div></form>`,{mount:s=>{
   const F=s.querySelector('form'),leer=()=>{const D=new FormData(F),ops=D.getAll('op');return {...c,alt:String(D.get('alt')||c.alt||''),opcionales:(c.opcionales||[]).map(o=>({...o,ok:ops.includes(o.id)}))}};
-  const pinta=()=>{s.querySelector('#ap-tot').textContent=fmtR(totModelo(leer()),m)};pinta();F.addEventListener('change',pinta);
-  F.addEventListener('submit',e=>{e.preventDefault();const n=leer();if((n.alternativas||[]).length&&!n.alt){s.querySelector('#ap-err').textContent='Elige la opción que aprobó el cliente.';return}
-   mutT(id,x=>{x.cot=n;x.total=totModelo(n);x.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.');verT(id)});
+  const pinta=()=>{s.querySelector('#ap-desg').innerHTML=htmlDesglose(calcPrecio(leer(),m),m)};pinta();F.addEventListener('change',pinta);
+  F.addEventListener('submit',e=>{e.preventDefault();const n=leer();if(n.precioModo!=='porTema'&&(n.alternativas||[]).length&&!n.alt){s.querySelector('#ap-err').textContent='Elige la opción que aprobó el cliente.';return}
+   mutT(id,x=>{x.cot=n;x.total=calcPrecio(n,m).total;x.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.');verT(id)});
  }});
 }
 
 /* ---------- modelos y catálogo en Ajustes ---------- */
+function precioModeloTxt(x,m){if(x.precioModo==='porTema')return (num(x.precioBase)>0?fmtR(num(x.precioBase),m)+' + ':'')+fmtR(num(x.precio),m)+' por '+((x.unidad||{}).s||'tema');return (x.alternativas||[]).length?x.alternativas.map(a=>fmtR(num(a.precio),m)).join(' / '):fmtR(num(x.precio),m)}
 function fModelos(){
+ const m=S.aj.moneda||'PEN';
  abrir(cab('Modelos de cotización')+`<p class="hint">Al cotizar un trabajo eliges uno de estos modelos; luego puedes ajustar todo para ese cliente.</p>
-  ${modelos().map(x=>`<div class="it gi" data-a="editarModelo" data-id="${esc(x.id)}"><div><b>${esc(x.nombre)}</b><p>${esc(x.titulo)}</p></div><span class="tag">${(x.alternativas||[]).length?esc(x.alternativas.map(a=>fmtR(num(a.precio),S.aj.moneda||'PEN')).join(' / ')):esc(fmtR(num(x.precio),S.aj.moneda||'PEN'))}</span></div>`).join('')}
+  ${modelos().map(x=>`<div class="it gi" data-a="editarModelo" data-id="${esc(x.id)}"><div><b>${esc(x.nombre)}</b><p>${esc(precioModeloTxt(x,m))}${textoEscala(x,m)?' · '+esc(textoEscala(x,m)):''}</p></div></div>`).join('')}
   <div class="acts"><button class="btn pri" data-a="nuevoModelo">${ic('plus')}Nuevo modelo</button><button class="btn" data-a="catalogo">Catálogo de equipos</button><button class="btn" data-a="ajustes">Volver a Ajustes</button></div>`);
 }
 function fModelo(id){
  const lista=modelos(),x0=id?lista.find(x=>x.id===id):null;if(id&&!x0)return;
  const base=x0||{...JSON.parse(JSON.stringify(lista[0])),id:'',nombre:''},m=S.aj.moneda||'PEN';
- abrir(cab(x0?'Modelo: '+esc(x0.nombre):'Nuevo modelo')+`<form novalidate>${htmlEditorCot(base,null,m)}
+ abrir(cab(x0?'Modelo: '+esc(x0.nombre):'Nuevo modelo')+`<form novalidate>${htmlEditorCot(base,null,m,'modelo')}
   <p class="err" id="ce-err" role="alert"></p>
   <div class="acts"><button class="btn pri" type="submit">Guardar modelo</button><button class="btn" type="button" data-a="modelos">Cancelar</button>${x0&&lista.length>1?`<button class="btn red" type="button" data-a="borrarModelo" data-id="${esc(x0.id)}" data-c="1" data-cl="Toca otra vez para borrar">Borrar</button>`:''}</div></form>`,{mount:s=>{
-  montarEditorCot(s,m);
+  montarEditorCot(s,m,null,false);
   s.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const n=leerEditorCot(s,{}),D=new FormData(e.target),nombre=String(D.get('nombre')||'').trim();
    if(!nombre){s.querySelector('#ce-err').textContent='Ponle un nombre al modelo.';return}
-   const md={id:x0?x0.id:'m'+uid(),nombre,titulo:n.titulo,etiqueta:n.etiqueta,precio:n.precio,intro:n.intro,servicio:n.servicio,incluye:n.incluye,equipos:n.equipos,
+   const md={id:x0?x0.id:'m'+uid(),nombre,titulo:n.titulo,etiqueta:n.etiqueta,precioModo:n.precioModo,precio:n.precio,precioBase:n.precioBase,unidad:n.unidad,escala:n.escala,intro:n.intro,servicio:n.servicio,incluye:n.incluye,equipos:n.equipos,
     opcionales:n.opcionales.map(o=>({nombre:o.nombre,precio:o.precio})),notaOpc:n.notaOpc,altTitulo:n.altTitulo,alternativas:n.alternativas.map(a=>({nombre:a.nombre,detalle:a.detalle,precio:a.precio})),
     secciones:n.secciones,consideraciones:n.consideraciones,fechaEtiqueta:n.fechaEtiqueta,notaFecha:n.notaFecha,entrega:n.entrega,material:n.material,pago:n.pago,validez:Math.max(1,parseInt(D.get('validez'),10)||15)};
    const nueva=x0?lista.map(x=>x.id===x0.id?md:x):[...lista,md];
@@ -1311,7 +1497,7 @@ function fModelo(id){
  }});
 }
 function fCatalogo(){
- const m=S.aj.moneda||'PEN',fila=x=>`<div class="orow" data-id="${esc(x.id||uid())}"><input data-f="n" aria-label="Equipo o servicio" value="${esc(x.nombre||'')}" placeholder="Equipo o servicio"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(x.precio||'')}" placeholder="0"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
+ const fila=x=>`<div class="orow" data-id="${esc(x.id||uid())}"><input data-f="n" aria-label="Equipo o servicio" value="${esc(x.nombre||'')}" placeholder="Equipo o servicio"><input data-f="p" inputmode="decimal" aria-label="Precio" value="${esc(x.precio||'')}" placeholder="0"><button type="button" class="x sm" data-del aria-label="Quitar">×</button></div>`;
  abrir(cab('Catálogo de equipos y servicios')+`<form novalidate><p class="hint">Precio vacío o 0 = se ofrece en “Equipos incluidos sin costo”. Con precio = aparece como opcional. Al cotizar, tocas cada uno para agregarlo.</p>
   <div id="cat">${catalogo().map(fila).join('')}</div>
   <div class="acts" style="margin:6px 0"><button type="button" class="btn sm" id="catadd">${ic('plus')}Agregar</button></div>
@@ -1332,7 +1518,7 @@ async function pdfCot(t){
  let J;try{J=await cargarPdf()}catch(e){toast('No se pudo preparar el PDF. Revisa tu conexión.');return null}
  let logo=null;try{logo=await cargarLogo()}catch(e){}
  const d=new J({unit:'pt',format:'a4',compress:true});
- if(t.cot.modo==='modelo')dibujarCotModelo(d,t,logo);else dibujarCotPartidas(d,t,logo);
+ if(t.cot.modo==='modelo'||t.cot.modo==='paquete')dibujarCotModelo(d,t,logo);else dibujarCotPartidas(d,t,logo);
  const nom=(t.cot.num||'cotizacion')+'-'+String(t.titulo||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'').slice(0,40).toLowerCase()+'.pdf';
  return {blob:d.output('blob'),nombre:nom};
 }
@@ -1341,55 +1527,75 @@ function encabezadoPdf(d,t,logo,txt,W,M){
  d.setFillColor(...NAVY);d.rect(0,0,W,108,'F');d.setFillColor(...ROSA);d.rect(0,108,W,3,'F');
  if(logo){try{d.addImage(logo,'PNG',M,26,168,54,'logo','FAST')}catch(e){logo=null}}
  if(!logo)txt(S.aj.negocio||'eMotion Studios',M,60,{s:22,b:1,c:[255,255,255]});
- txt(t.cot.modo==='modelo'?String(t.cot.titulo||'Cotización').split(/\s[–-]\s/)[0].toUpperCase():'COTIZACIÓN',W-M,42,{s:9,c:[200,208,220],r:1});
+ txt(t.cot.modo==='modelo'||t.cot.modo==='paquete'?String(t.cot.titulo||'Cotización').split(/\s[–-]\s/)[0].toUpperCase():'COTIZACIÓN',W-M,42,{s:9,c:[200,208,220],r:1});
  txt(t.cot.num||'',W-M,64,{s:16,b:1,c:[255,255,255],r:1});
  txt('Emitida el '+fd(t.cot.emitida||hoy()),W-M,84,{s:9,c:[200,208,220],r:1});
 }
+// Dibuja una cotización con modelo o un paquete (varias partes)
 function dibujarCotModelo(d,t,logo){
- const W=595,H=842,M=50,CW=W-2*M,m=t.moneda||'PEN',c=t.cot,cl=cli(t.clienteId);let y=0;
+ const W=595,H=842,M=50,CW=W-2*M,m=t.moneda||'PEN',c=t.cot,cl=cli(t.clienteId),esPaq=c.modo==='paquete';let y=0;
  const NAVY=[5,18,41],ROSA=[216,27,96],GRIS=[95,104,114],TINTA=[24,28,34];
  const txt=(x,X,Y,o={})=>{d.setFont('helvetica',o.b?'bold':o.i?'italic':'normal');d.setFontSize(o.s||10);d.setTextColor(...(o.c||TINTA));d.text(pdfTxt(x),X,Y,o.r?{align:'right'}:undefined)};
  const salto=h=>{if(y+h>H-64){d.addPage();y=56}};
  const parrafo=(x,o={})=>{const s=o.s||10.5,lh=s*1.42,X=o.x||M,w=o.w||CW;d.setFont('helvetica',o.b?'bold':o.i?'italic':'normal');d.setFontSize(s);const ls=d.splitTextToSize(pdfTxt(x),w);ls.forEach(l=>{salto(lh);d.setFont('helvetica',o.b?'bold':o.i?'italic':'normal');d.setFontSize(s);d.setTextColor(...(o.c||TINTA));d.text(l,X,y);y+=lh})};
  const vinetas=(arr,o={})=>{(arr||[]).forEach(x=>{const s=o.s||10.5,lh=s*1.42;d.setFont('helvetica','normal');d.setFontSize(s);const ls=d.splitTextToSize(pdfTxt(x),CW-16);salto(lh*Math.min(ls.length,2));d.setFillColor(...ROSA);d.circle(M+3,y-3.4,1.7,'F');ls.forEach(l=>{salto(lh);d.setFont('helvetica','normal');d.setFontSize(s);d.setTextColor(...TINTA);d.text(l,M+14,y);y+=lh})});y+=4};
  const titulo=x=>{y+=10;salto(40);txt(String(x).toUpperCase(),M,y,{s:9.5,b:1,c:ROSA});y+=6;d.setDrawColor(232,234,238);d.setLineWidth(.8);d.line(M,y,W-M,y);y+=16};
+ // tabla de precio: conceptos, descuentos en rosa y total
+ const tablaPrecio=(r,tituloTot)=>{
+  const filas=r.lineas;if(filas.length===1&&!r.ahorro&&!filas[0].pend){salto(54);d.setFillColor(244,246,249);d.roundedRect(M,y-14,CW,44,6,6,'F');txt(tituloTot||'Total',M+14,y+12,{s:10,c:GRIS});txt(fmtR(r.total,m),W-M-14,y+14,{s:18,b:1,c:NAVY,r:1});y+=48;return}
+  filas.forEach(x=>{d.setFont('helvetica','normal');d.setFontSize(10.5);const ls=d.splitTextToSize(pdfTxt(x.c),CW-140);salto(ls.length*15+8);ls.forEach((l,i)=>{d.setFont('helvetica',x.parte!=null?'bold':'normal');d.setFontSize(10.5);d.setTextColor(...(x.desc?ROSA:TINTA));d.text(l,M+4,y+i*15)});txt(x.m<0?'-'+fmtR(-x.m,m):fmtR(x.m,m),W-M-4,y,{s:10.5,b:x.parte!=null,r:1,c:x.desc?ROSA:TINTA});y+=ls.length*15+3;d.setDrawColor(236,238,241);d.line(M,y-9,W-M,y-9)});
+  salto(56);y+=8;d.setFillColor(...NAVY);d.roundedRect(M,y-14,CW,r.ahorro>0.004?50:42,6,6,'F');
+  txt((tituloTot||'Total')+(r.pendiente?' (según la opción elegida)':''),M+14,y+11,{s:10,c:[200,208,220]});txt(fmtR(r.total,m),W-M-14,y+13,{s:17,b:1,c:[255,255,255],r:1});
+  if(r.ahorro>0.004)txt('Ahorro: '+fmtR(r.ahorro,m),W-M-14,y+29,{s:8.5,b:1,c:[255,170,200],r:1});
+  y+=r.ahorro>0.004?52:44};
+ const fila=(k,v)=>{if(!v)return;d.setFont('helvetica','normal');d.setFontSize(10.5);const ls=d.splitTextToSize(pdfTxt(v),CW-150);salto(ls.length*15+6);txt(k,M,y,{s:10,b:1,c:GRIS});ls.forEach((l,i)=>{d.setTextColor(...TINTA);d.setFont('helvetica','normal');d.setFontSize(10.5);d.text(l,M+150,y+i*15)});y+=ls.length*15+6};
+ // contenido de un servicio (cotización simple o una parte del paquete)
+ const servicio=(p,nro)=>{
+  const alts=p.alternativas||[];
+  if(nro!=null){y+=14;salto(70);d.setFillColor(244,246,249);d.roundedRect(M,y-16,CW,28,5,5,'F');txt(nro+'. '+tituloParte(p).replace(' · ',' - '),M+12,y+2,{s:12.5,b:1,c:NAVY});y+=26;
+   if(p.intro){parrafo(ponerDatos(p.intro,t,{...p,ciudad:c.ciudad,_parte:nro-1,_partes:c.partes}),{c:[55,62,70]})}}
+  titulo(p.servicio||'Servicios principales');vinetas(p.incluye);
+  if(alts.length&&p.precioModo!=='porTema'){titulo(p.altTitulo||'Opciones');salto(26+alts.length*24);
+   d.setFillColor(244,246,249);d.rect(M,y-13,CW,22,'F');txt('Opción',M+10,y+2,{s:8.5,b:1,c:GRIS});txt('Detalle',M+CW*0.42,y+2,{s:8.5,b:1,c:GRIS});txt('Precio',W-M-10,y+2,{s:8.5,b:1,c:GRIS,r:1});y+=22;
+   alts.forEach(a=>{const sel=a.id===p.alt;if(sel){d.setFillColor(253,236,243);d.rect(M,y-14,CW,24,'F')}txt(a.nombre+(sel?'  (elegida)':''),M+10,y+2,{s:10.5,b:1});txt(a.detalle||'',M+CW*0.42,y+2,{s:10});txt(fmtR(num(a.precio),m),W-M-10,y+2,{s:10.5,b:1,r:1});y+=24;d.setDrawColor(232,234,238);d.line(M,y-10,W-M,y-10)});y+=4}
+  if((p.equipos||[]).length){titulo('Equipos incluidos (sin costo adicional)');vinetas(p.equipos)}
+  if((p.opcionales||[]).length){titulo('Opcionales (costo adicional)');
+   p.opcionales.forEach(o=>{d.setFont('helvetica','normal');d.setFontSize(10.5);const ls=d.splitTextToSize(pdfTxt(o.nombre),CW-(o.ok?200:120));salto(ls.length*15+8);d.setFillColor(...ROSA);d.circle(M+3,y-3.4,1.7,'F');ls.forEach((l,i)=>{d.setTextColor(...TINTA);d.setFont('helvetica','normal');d.setFontSize(10.5);d.text(l,M+14,y+i*15)});txt(fmtR(num(o.precio),m),W-M,y,{s:10.5,b:1,r:1});if(o.ok)txt('INCLUIDO',W-M-82,y,{s:8,b:1,c:ROSA,r:1});y+=ls.length*15+4});
+   if(p.notaOpc){y+=2;parrafo('* '+p.notaOpc,{s:9,i:1,c:GRIS})}y+=4}
+  const r=calcPrecio(p,m);
+  if(!(alts.length&&p.precioModo!=='porTema'&&!p.alt&&!(p.opcionales||[]).some(o=>o.ok)&&!num((p.descuento||{}).valor))){titulo(nro!=null?'Precio de este servicio':'Inversión');tablaPrecio(r,nro!=null?'Subtotal':'Total')}
+  (p.secciones||[]).forEach(sc=>{titulo(sc.titulo||'');const ls=String(sc.texto||'').split('\n');let bl=[];const vaciar=()=>{if(bl.length){vinetas(bl);bl=[]}};
+   ls.forEach(l=>{if(/^\s*[•·\-*]\s+/.test(l))bl.push(l.replace(/^\s*[•·\-*]\s+/,''));else if(l.trim()){vaciar();parrafo(l);y+=3}});vaciar()});
+  if(nro!=null){if(p.entrega||(p.material||[]).length){titulo('Entrega de este servicio');fila('Tiempo de entrega',p.entrega);if((p.material||[]).length)fila('Material de entrega',p.material.join(' · '))}}
+ };
  encabezadoPdf(d,t,logo,txt,W,M);
  y=148;
  d.setFont('helvetica','bold');d.setFontSize(16);d.setTextColor(...NAVY);d.splitTextToSize(pdfTxt(c.titulo||'Cotización'),CW).forEach(l=>{d.text(l,M,y);y+=20});
  y+=6;
- // datos
- const datos=[[c.etiqueta||'Cliente',cl?cl.nombre:(c.etiqueta==='Novios'?t.titulo:'')],['Ciudad',c.ciudad],['Proyecto',[t.titulo,nomArt(t)&&nrm(nomArt(t))!==nrm(t.titulo)?nomArt(t):''].filter(Boolean).join(' · ')],[c.fechaEtiqueta||'Fecha tentativa de rodaje',t.fecha?fechasRodaje(t):'Por definir']].filter(x=>x[1]);
+ const fechaEt=(esPaq?((c.partes||[])[0]||{}).fechaEtiqueta:c.fechaEtiqueta)||'Fecha tentativa de rodaje';
+ const datos=[[c.etiqueta||'Cliente',cl?cl.nombre:(c.etiqueta==='Novios'?t.titulo:'')],['Ciudad',c.ciudad],['Proyecto',[t.titulo,nomArt(t)&&nrm(nomArt(t))!==nrm(t.titulo)?nomArt(t):''].filter(Boolean).join(' · ')],[fechaEt,t.fecha?fechasRodaje(t):'Por definir']].filter(x=>x[1]);
  const cw2=(CW-20)/2;
  for(let i=0;i<datos.length;i+=2){let alto=0;[0,1].forEach(k=>{const it=datos[i+k];if(!it)return;const X=M+k*(cw2+20);txt(String(it[0]).toUpperCase(),X,y,{s:7.5,c:GRIS});d.setFont('helvetica','bold');d.setFontSize(11);const ls=d.splitTextToSize(pdfTxt(it[1]),cw2);d.setTextColor(...TINTA);d.text(ls,X,y+14);alto=Math.max(alto,ls.length)});y+=22+13*alto}
  if(c.intro){y+=4;parrafo(ponerDatos(c.intro,t,c),{c:[55,62,70]})}
- // servicios y precio
- const alts=c.alternativas||[],altSel=alts.find(a=>a.id===c.alt),acept=(c.opcionales||[]).filter(o=>o.ok);
- titulo(c.servicio||'Servicios principales');
- if(!alts.length){salto(54);d.setFillColor(244,246,249);d.roundedRect(M,y-14,CW,44,6,6,'F');txt('Total',M+14,y+12,{s:10,c:GRIS});txt(fmtR(num(c.precio),m),W-M-14,y+14,{s:18,b:1,c:NAVY,r:1});y+=48}
- vinetas(c.incluye);
- if(alts.length){titulo(c.altTitulo||'Opciones');salto(26+alts.length*24);
-  d.setFillColor(244,246,249);d.rect(M,y-13,CW,22,'F');txt('Opción',M+10,y+2,{s:8.5,b:1,c:GRIS});txt('Detalle',M+CW*0.42,y+2,{s:8.5,b:1,c:GRIS});txt('Precio',W-M-10,y+2,{s:8.5,b:1,c:GRIS,r:1});y+=22;
-  alts.forEach(a=>{const sel=a.id===c.alt;if(sel){d.setFillColor(253,236,243);d.rect(M,y-14,CW,24,'F')}txt(a.nombre+(sel?'  (elegida)':''),M+10,y+2,{s:10.5,b:1});txt(a.detalle||'',M+CW*0.42,y+2,{s:10});txt(fmtR(num(a.precio),m),W-M-10,y+2,{s:10.5,b:1,r:1});y+=24;d.setDrawColor(232,234,238);d.line(M,y-10,W-M,y-10)});y+=4}
- if((c.equipos||[]).length){titulo('Equipos incluidos (sin costo adicional)');vinetas(c.equipos)}
- if((c.opcionales||[]).length){titulo('Opcionales (costo adicional)');
-  c.opcionales.forEach(o=>{d.setFont('helvetica','normal');d.setFontSize(10.5);const ls=d.splitTextToSize(pdfTxt(o.nombre),CW-(o.ok?200:120));salto(ls.length*15+8);d.setFillColor(...ROSA);d.circle(M+3,y-3.4,1.7,'F');ls.forEach((l,i)=>{d.setTextColor(...TINTA);d.setFont('helvetica','normal');d.setFontSize(10.5);d.text(l,M+14,y+i*15)});txt(fmtR(num(o.precio),m),W-M,y,{s:10.5,b:1,r:1});if(o.ok)txt('INCLUIDO',W-M-82,y,{s:8,b:1,c:ROSA,r:1});y+=ls.length*15+4});
-  if(c.notaOpc){y+=2;parrafo('* '+c.notaOpc,{s:9,i:1,c:GRIS})}y+=4}
- if(altSel||acept.length){salto(56);y+=6;d.setFillColor(...NAVY);d.roundedRect(M,y-14,CW,46,6,6,'F');
-  const det=[altSel?altSel.nombre+' '+fmtR(num(altSel.precio),m):'Base '+fmtR(num(c.precio),m),...acept.map(o=>'+ '+o.nombre.split('(')[0].trim())].join(' ');
-  d.setFont('helvetica','normal');d.setFontSize(8.5);d.setTextColor(200,208,220);d.text(d.splitTextToSize(pdfTxt(det),CW-200)[0]||'',M+14,y+12);
-  txt('Total '+fmtR(totModelo(c),m),W-M-14,y+14,{s:15,b:1,c:[255,255,255],r:1});y+=50}
- (c.secciones||[]).forEach(sc=>{titulo(sc.titulo||'');const ls=String(sc.texto||'').split('\n');let bl=[];const vaciar=()=>{if(bl.length){vinetas(bl);bl=[]}};
-  ls.forEach(l=>{if(/^\s*[•·\-*]\s+/.test(l))bl.push(l.replace(/^\s*[•·\-*]\s+/,''));else if(l.trim()){vaciar();parrafo(l);y+=3}});vaciar()});
- if((c.consideraciones||[]).length){titulo('Consideraciones');vinetas(c.consideraciones)}
- titulo('Fechas y entrega');
- const fila=(k,v)=>{if(!v)return;d.setFont('helvetica','normal');d.setFontSize(10.5);const ls=d.splitTextToSize(pdfTxt(v),CW-150);salto(ls.length*15+6);txt(k,M,y,{s:10,b:1,c:GRIS});ls.forEach((l,i)=>{d.setTextColor(...TINTA);d.setFont('helvetica','normal');d.setFontSize(10.5);d.text(l,M+150,y+i*15)});y+=ls.length*15+6};
- fila(c.fechaEtiqueta||'Fecha tentativa de rodaje',t.fecha?fechasRodaje(t):'Por definir');
- if(c.notaFecha){parrafo(c.notaFecha,{s:9,i:1,c:GRIS,x:M+150,w:CW-150});y+=4}
- fila('Tiempo de entrega',c.entrega);
- if((c.material||[]).length)fila('Material de entrega',c.material.join(' · '));
- if((c.pago||[]).length){titulo('Forma de pago');const tot=totModelo(c);vinetas(c.pago.map(l=>{const p=/(\d+(?:[.,]\d+)?)\s*%/.exec(l);return p&&tot>0?l+': '+fmtR(r2(tot*num(p[1])/100),m):l}))}
+ let totalFinal;
+ if(esPaq){
+  const r=calcPaquete(c,m);totalFinal=r.total;
+  titulo('Resumen del paquete');tablaPrecio(r,'Total del paquete');
+  (c.partes||[]).forEach((p,i)=>servicio(p,i+1));
+  if((c.consideraciones||[]).length){titulo('Consideraciones');vinetas(c.consideraciones)}
+  titulo('Fechas');fila(fechaEt,t.fecha?fechasRodaje(t):'Por definir (se coordina cada servicio por separado)');
+ }else{
+  totalFinal=calcPrecio(c,m).total;
+  servicio(c,null);
+  if((c.consideraciones||[]).length){titulo('Consideraciones');vinetas(c.consideraciones)}
+  titulo('Fechas y entrega');
+  fila(c.fechaEtiqueta||'Fecha tentativa de rodaje',t.fecha?fechasRodaje(t):'Por definir');
+  if(c.notaFecha){parrafo(c.notaFecha,{s:9,i:1,c:GRIS,x:M+150,w:CW-150});y+=4}
+  fila('Tiempo de entrega',c.entrega);
+  if((c.material||[]).length)fila('Material de entrega',c.material.join(' · '));
+ }
+ if((c.pago||[]).length){titulo('Forma de pago');vinetas(c.pago.map(l=>{const p=/(\d+(?:[.,]\d+)?)\s*%/.exec(l);return p&&totalFinal>0?l+': '+fmtR(r2(totalFinal*num(p[1])/100),m):l}))}
  if(c.valida){salto(30);y+=6;parrafo('La presente cotización tiene una validez de '+Math.max(1,Math.round((new Date(c.valida)-new Date(c.emitida||hoy()))/864e5))+' días calendario a partir de su fecha de emisión (hasta el '+fd(c.valida)+').',{s:10,b:1,c:ROSA})}
- // firma
  const firma=lineas(S.aj.firma||'José Payva Humalla\nRealizador Audiovisual');salto(40+firma.length*15);y+=22;txt('Atentamente,',M,y,{s:10.5,c:GRIS});y+=30;
  firma.forEach((l,i)=>{txt(l,M,y,{s:i?10:11.5,b:!i,c:i?GRIS:TINTA});y+=15});
  txt(S.aj.negocio||'eMotion Studios',M,y,{s:10,c:GRIS});
@@ -1643,11 +1849,12 @@ const A={
  editarT:id=>{const t=S.trabajos.find(x=>x.id===id);t&&fTrabajo(t)},
  borrarT:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)quitarDeCal(t);(t&&t.gastos||[]).forEach(g=>g.foto&&borrarFoto(g.id));borrar('trabajos',id).catch(()=>{});cerrar();toast('Trabajo eliminado.')},
  cotPdf:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)(cotLista(t)?hacerCotPdf(t):fCot(t.id))},
+ fPaquete:id=>fPaquete(id),editarParte:(id,b)=>fCotModelo(id,null,+b.dataset.p),quitarParte:(id,b)=>{const i=+b.dataset.p;mutT(id,x=>{x.cot.partes=(x.cot.partes||[]).filter((_,k)=>k!==i)}).then(()=>fPaquete(id))},
  cotWa:id=>{const t=S.trabajos.find(x=>x.id===id);if(t)enviarCot(t)},
  modelos:()=>fModelos(),editarModelo:id=>fModelo(id),nuevoModelo:()=>fModelo(),catalogo:()=>fCatalogo(),borrarModelo:id=>{S.aj={...S.aj,modelos:modelos().filter(x=>x.id!==id)};guardarAj();toast('Modelo borrado.');fModelos()},
  fCot:id=>fCot(id),
  nuevoEq:id=>fEquipo(id),editarEq:(id,b)=>fEquipo(id,b.dataset.p),borrarEq:(id,b)=>{mutT(id,n=>{n.equipo=(n.equipo||[]).filter(x=>x.id!==b.dataset.p)});toast('Quitado del equipo.');verT(id)},
- aprobar:id=>{const t=S.trabajos.find(x=>x.id===id);if(t&&t.cot&&t.cot.modo==='modelo'&&((t.cot.alternativas||[]).length||(t.cot.opcionales||[]).length)){fAprobar(id);return}mutT(id,n=>{n.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.')},
+ aprobar:id=>{const t=S.trabajos.find(x=>x.id===id);if(t&&t.cot&&(t.cot.modo==='paquete'&&(t.cot.partes||[]).length||t.cot.modo==='modelo'&&((t.cot.alternativas||[]).length||(t.cot.opcionales||[]).length))){fAprobar(id);return}mutT(id,n=>{n.estadoProd='produccion'}).then(()=>syncCal(id));toast('Cotización aprobada: ya cuenta como trabajo por cobrar.')},
  entregar:id=>{mutT(id,n=>{n.estadoProd='entregado';n.entregadoEl=hoy()});toast(`Entregado. La cancelación vence en ${G()} ${G()===1?'día':'días'}.`)},
  pago:id=>fPago(id),gasto:id=>fGasto(id),
  editarPago:(id,b)=>fPago(id,b.dataset.p),
